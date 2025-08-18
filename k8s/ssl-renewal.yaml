@@ -1,0 +1,199 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ssl-cert-renewal
+  namespace: openemr
+  labels:
+    app: ssl-cert-renewal
+spec:
+  # Run every 2 days at 2 AM
+  schedule: "0 2 */2 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ssl-cert-renewal
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: openemr-sa
+          containers:
+          - name: ssl-renewal
+            image: openemr/openemr:7.0.3
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              runAsNonRoot: false
+              runAsUser: 0
+              capabilities:
+                drop:
+                - ALL
+                add:
+                - CHOWN
+                - SETUID
+                - SETGID
+                - FOWNER
+                - DAC_OVERRIDE
+            command: ["/bin/sh", "-c"]
+            args:
+            - |
+              set -e
+              echo "=== Starting SSL Certificate Renewal ==="
+              echo "Timestamp: $(date)"
+              
+              # Create backup of existing certificates
+              if [ -f /etc/ssl/certs/selfsigned.cert.pem ]; then
+                echo "=== Backing up existing certificates ==="
+                cp /etc/ssl/certs/selfsigned.cert.pem /etc/ssl/certs/selfsigned.cert.pem.backup.$(date +%Y%m%d_%H%M%S)
+                cp /etc/ssl/private/selfsigned.key.pem /etc/ssl/private/selfsigned.key.pem.backup.$(date +%Y%m%d_%H%M%S)
+              fi
+              
+              # Generate new SSL certificates (matching OpenEMR script format)
+              echo "=== Generating new SSL certificates ==="
+              openssl req -x509 -newkey rsa:4096 \
+                -keyout /etc/ssl/private/selfsigned.key.pem.new \
+                -out /etc/ssl/certs/selfsigned.cert.pem.new \
+                -days 365 -nodes \
+                -subj "/C=xx/ST=x/L=x/O=x/OU=x/CN=localhost"
+              
+              # Verify new certificates
+              echo "=== Verifying new certificates ==="
+              openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem.new -text -noout | head -20
+              
+              # Atomically replace certificates
+              echo "=== Installing new certificates ==="
+              mv /etc/ssl/private/selfsigned.key.pem.new /etc/ssl/private/selfsigned.key.pem
+              mv /etc/ssl/certs/selfsigned.cert.pem.new /etc/ssl/certs/selfsigned.cert.pem
+              
+              # Recreate symbolic links (matching OpenEMR script exactly)
+              rm -f /etc/ssl/certs/webserver.cert.pem
+              rm -f /etc/ssl/private/webserver.key.pem
+              ln -s /etc/ssl/certs/selfsigned.cert.pem /etc/ssl/certs/webserver.cert.pem
+              ln -s /etc/ssl/private/selfsigned.key.pem /etc/ssl/private/webserver.key.pem
+              
+              # Update marker file with timestamp
+              echo "SSL certificates renewed on $(date)" > /etc/ssl/docker-selfsigned-configured
+              
+              # Set proper permissions
+              chown -R apache:apache /etc/ssl/
+              chmod 600 /etc/ssl/private/*
+              chmod 644 /etc/ssl/certs/*
+              
+              # Clean up old backups (keep only last 5)
+              echo "=== Cleaning up old certificate backups ==="
+              cd /etc/ssl/certs/
+              ls -t selfsigned.cert.pem.backup.* 2>/dev/null | tail -n +6 | xargs rm -f || true
+              cd /etc/ssl/private/
+              ls -t selfsigned.key.pem.backup.* 2>/dev/null | tail -n +6 | xargs rm -f || true
+              
+              echo "=== SSL Certificate Renewal Complete ==="
+              echo "New certificate valid until: $(openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem -noout -enddate)"
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
+            volumeMounts:
+            - name: openemr-ssl
+              mountPath: /etc/ssl
+          volumes:
+          - name: openemr-ssl
+            persistentVolumeClaim:
+              claimName: openemr-ssl-pvc
+          # EKS Auto Mode handles node selection automatically
+          tolerations:
+          - key: "CriticalAddonsOnly"
+            operator: "Exists"
+            effect: "NoSchedule"
+          - key: "eks.amazonaws.com/compute-type"
+            operator: "Equal"
+            value: "auto-mode"
+            effect: "NoSchedule"
+---
+# Optional: Create a one-time job to test SSL renewal immediately
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ssl-cert-renewal-test
+  namespace: openemr
+  labels:
+    app: ssl-cert-renewal-test
+spec:
+  template:
+    metadata:
+      labels:
+        app: ssl-cert-renewal-test
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: openemr-sa
+      containers:
+      - name: ssl-renewal-test
+        image: openemr/openemr:7.0.3
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: false
+          runAsUser: 0
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - CHOWN
+            - SETUID
+            - SETGID
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          echo "=== SSL Certificate Renewal Test ==="
+          echo "Current certificate info:"
+          if [ -f /etc/ssl/certs/selfsigned.cert.pem ]; then
+            openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem -noout -dates
+          else
+            echo "No existing certificate found"
+          fi
+          
+          echo "=== Test completed successfully ==="
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: openemr-ssl
+          mountPath: /etc/ssl
+      volumes:
+      - name: openemr-ssl
+        persistentVolumeClaim:
+          claimName: openemr-ssl-pvc
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "eks.amazonaws.com/compute-type"
+        operator: "Equal"
+        value: "auto-mode"
+        effect: "NoSchedule"

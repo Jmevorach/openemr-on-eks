@@ -1,0 +1,115 @@
+# storage.yaml
+
+# Dynamic EFS StorageClass (primary data)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: ${EFS_ID}  # Will be replaced by deployment script
+  directoryPerms: "0755"
+  basePath: "/openemr"
+  uid: "0"
+  gid: "0"
+mountOptions:
+  - tls
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openemr-sites-pvc
+  namespace: openemr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openemr-ssl-pvc
+  namespace: openemr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openemr-letsencrypt-pvc
+  namespace: openemr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 10Gi
+
+# Dynamic EFS StorageClass (backups)
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc-backup
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: ${EFS_ID}  # Will be replaced by deployment script
+  directoryPerms: "0755"
+  basePath: "/backup"
+  uid: "0"
+  gid: "0"
+mountOptions:
+  - tls
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openemr-backup-pvc
+  namespace: openemr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc-backup
+  resources:
+    requests:
+      storage: 50Gi
+
+# Encrypted gp3 EBS StorageClass (monitoring, time-series)
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-monitoring-encrypted
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.eks.amazonaws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  iops: "3000"
+  throughput: "125"
+  fsType: ext4
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete

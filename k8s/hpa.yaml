@@ -1,0 +1,62 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: openemr-hpa
+  namespace: openemr
+  labels:
+    app: openemr
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: openemr
+  minReplicas: ${OPENEMR_MIN_REPLICAS}
+  maxReplicas: ${OPENEMR_MAX_REPLICAS}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: ${OPENEMR_CPU_THRESHOLD}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: ${OPENEMR_MEMORY_THRESHOLD}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: ${OPENEMR_SCALE_DOWN_STABILIZATION}
+      policies:
+      - type: Percent
+        value: 50  # Scale down by max 50% at a time
+        periodSeconds: 60
+      - type: Pods
+        value: 2   # Scale down by max 2 pods at a time
+        periodSeconds: 60
+      selectPolicy: Min  # Use the most conservative policy
+    scaleUp:
+      stabilizationWindowSeconds: ${OPENEMR_SCALE_UP_STABILIZATION}
+      policies:
+      - type: Percent
+        value: 100  # Scale up by max 100% at a time
+        periodSeconds: 60
+      - type: Pods
+        value: 4    # Scale up by max 4 pods at a time
+        periodSeconds: 60
+      selectPolicy: Max  # Use the most aggressive policy for scaling up
+---
+# Pod Disruption Budget to ensure availability during scaling
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openemr-pdb
+  namespace: openemr
+  labels:
+    app: openemr
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openemr

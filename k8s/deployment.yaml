@@ -1,0 +1,228 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openemr
+  namespace: openemr
+  labels:
+    app: openemr
+    version: v1
+spec:
+  # replicas managed by HPA - see hpa.yaml
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: openemr
+  template:
+    metadata:
+      labels:
+        app: openemr
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: openemr-sa
+
+      containers:
+      - name: openemr
+        image: openemr/openemr:${OPENEMR_VERSION}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: false
+          runAsUser: 0
+          runAsGroup: 0
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+            - CHOWN
+            - SETUID
+            - SETGID
+            - FOWNER
+            - DAC_OVERRIDE
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        workingDir: /var/www/localhost/htdocs/openemr
+        command: ["/bin/sh", "-c"]
+        args:
+        - |          
+          # Download AWS root CA certificates for secure connections
+          echo "=== Downloading SSL certificates ==="
+          curl --cacert /swarm-pieces/ssl/certs/ca-certificates.crt -o /root/certs/redis/redis-ca --create-dirs https://www.amazontrust.com/repository/AmazonRootCA1.pem && \
+          chown apache /root/certs/redis/redis-ca && \
+          curl --cacert /swarm-pieces/ssl/certs/ca-certificates.crt -o /root/certs/mysql/server/mysql-ca --create-dirs https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem && \
+          chown apache /root/certs/mysql/server/mysql-ca && \
+          
+          # Setting up crontab for certificate renewal
+          echo "1 23 * * * httpd -k graceful" >> /etc/crontabs/root && \
+          
+          echo "=== Setting up OpenEMR script ==="
+          chmod +x ./openemr.sh && \
+          
+          echo "=== Starting OpenEMR initialization ==="
+          ./openemr.sh && \
+          
+          echo "=== OpenEMR Ready ==="
+          # Keep the container running
+          tail -f /dev/null
+        env:
+        - name: MYSQL_HOST
+          valueFrom:
+            secretKeyRef:
+              name: openemr-db-credentials
+              key: mysql-host
+        - name: MYSQL_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: openemr-db-credentials
+              key: mysql-user
+        - name: MYSQL_ROOT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: openemr-db-credentials
+              key: mysql-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: openemr-db-credentials
+              key: mysql-user
+        - name: MYSQL_PASS
+          valueFrom:
+            secretKeyRef:
+              name: openemr-db-credentials
+              key: mysql-password
+        - name: MYSQL_PORT
+          value: "3306"
+        - name: REDIS_SERVER
+          valueFrom:
+            secretKeyRef:
+              name: openemr-redis-credentials
+              key: redis-host
+        - name: REDIS_PORT
+          valueFrom:
+            secretKeyRef:
+              name: openemr-redis-credentials
+              key: redis-port
+        - name: REDIS_USERNAME
+          value: "openemr"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: openemr-redis-credentials
+              key: redis-password
+        - name: REDIS_TLS
+          value: "yes"
+        - name: OE_USER
+          valueFrom:
+            secretKeyRef:
+              name: openemr-app-credentials
+              key: admin-user
+        - name: OE_PASS
+          valueFrom:
+            secretKeyRef:
+              name: openemr-app-credentials
+              key: admin-password
+        - name: SWARM_MODE
+          value: "yes"
+        # OpenEMR API Configuration (conditionally set by deploy script)
+        # OPENEMR_SETTING_rest_api will be added if API is enabled
+        # OPENEMR_SETTING_rest_fhir_api will be added if API is enabled
+        # OpenEMR Patient Portal Configuration (conditionally set by deploy script)  
+        # OPENEMR_SETTING_portal_onsite_two_address will be added if portal is enabled
+        # OPENEMR_SETTING_portal_onsite_two_enable will be added if portal is enabled
+        # OPENEMR_SETTING_ccda_alt_service_enable will be added if portal is enabled
+        # OPENEMR_SETTING_rest_portal_api will be added if portal is enabled
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        startupProbe:
+          httpGet:
+            path: /interface/login/login.php
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 25
+        readinessProbe:
+          httpGet:
+            path: /interface/login/login.php
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 240
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /interface/login/login.php
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 300
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 5
+        volumeMounts:
+        - name: openemr-sites
+          mountPath: /var/www/localhost/htdocs/openemr/sites
+        - name: openemr-ssl
+          mountPath: /etc/ssl
+        - name: openemr-letsencrypt
+          mountPath: /etc/letsencrypt
+
+      volumes:
+      - name: db-credentials
+        secret:
+          secretName: openemr-db-credentials
+      - name: redis-credentials
+        secret:
+          secretName: openemr-redis-credentials
+      - name: openemr-sites
+        persistentVolumeClaim:
+          claimName: openemr-sites-pvc
+      - name: openemr-ssl
+        persistentVolumeClaim:
+          claimName: openemr-ssl-pvc
+      - name: openemr-letsencrypt
+        persistentVolumeClaim:
+          claimName: openemr-letsencrypt-pvc
+
+      # EKS Auto Mode handles node selection, scheduling, and optimal placement automatically
+      # Add tolerations for EKS Auto Mode nodes
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "eks.amazonaws.com/compute-type"
+        operator: "Equal"
+        value: "auto-mode"
+        effect: "NoSchedule"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openemr-sa
+  namespace: openemr
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/openemr-service-account-role
+automountServiceAccountToken: true

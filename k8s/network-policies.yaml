@@ -1,0 +1,105 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openemr-monitoring-network-policy
+  namespace: openemr
+  labels:
+    app: openemr
+    component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: openemr
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: openemr
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  # Allow internal cluster communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openemr-inter-namespace-network-policy
+  namespace: openemr
+  labels:
+    app: openemr
+    component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: openemr
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow communication within the OpenEMR namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: openemr
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openemr-base-access
+  namespace: openemr
+  labels:
+    app: openemr
+    component: security
+spec:
+  podSelector:
+    matchLabels:
+      app: openemr
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Always allow basic OpenEMR access (login, main interface)
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  # Allow database access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow Redis access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external services (certificate downloads, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
