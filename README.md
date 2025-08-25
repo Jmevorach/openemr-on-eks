@@ -506,6 +506,9 @@ cd ../scripts
 
 ```
 openemr-on-eks/
+├── .github/                            # GitHub Actions and workflows
+│   └── workflows/                      # CI/CD automation workflows
+│       └── manual-releases.yml         # Manual release workflow for version management
 ├── terraform/                          # Infrastructure as Code (Modular Structure)
 │   ├── main.tf                         # Terraform providers and data sources
 │   ├── variables.tf                    # Input variables and defaults (including autoscaling)
@@ -569,6 +572,7 @@ openemr-on-eks/
 └── docs/                               # Complete documentation
     ├── DEPLOYMENT_GUIDE.md             # Step-by-step deployment guide
     ├── AUTOSCALING_GUIDE.md            # Autoscaling configuration and optimization
+    ├── MANUAL_RELEASES.md              # Guide to the OpenEMR on EKS release system
     ├── TROUBLESHOOTING.md              # Troubleshooting and solutions
     └── BACKUP_RESTORE_GUIDE.md         # Comprehensive backup and restore guide
 ```
