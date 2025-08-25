@@ -1,0 +1,303 @@
+name: Manual Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type for manual trigger'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      release_notes:
+        description: 'Release notes (required)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (no actual release)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.13.7'
+  SEMVER_PYTHON_PACKAGE_VERSION: "3.0.4"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  determine-release-type:
+    runs-on: ubuntu-24.04
+    outputs:
+      release-type: ${{ steps.determine-type.outputs.release-type }}
+      bump-version: ${{ steps.determine-type.outputs.bump-version }}
+      triggered-by: ${{ steps.determine-type.outputs.triggered-by }}
+    steps:
+      - name: Determine release type
+        id: determine-type
+        run: |
+          echo "release-type=${{ github.event.inputs.release_type }}" >> $GITHUB_OUTPUT
+          echo "triggered-by=${{ github.actor }}" >> $GITHUB_OUTPUT
+
+          case "${{ github.event.inputs.release_type }}" in
+            major) echo "bump-version=major" >> $GITHUB_OUTPUT ;;
+            minor) echo "bump-version=minor" >> $GITHUB_OUTPUT ;;
+            patch) echo "bump-version=patch" >> $GITHUB_OUTPUT ;;
+            *) echo "::error::Invalid release type" && exit 1 ;;
+          esac
+
+  check-changes:
+    needs: determine-release-type
+    runs-on: ubuntu-24.04
+    outputs:
+      has-changes: ${{ steps.check-changes.outputs.has-changes }}
+      last-tag: ${{ steps.check-changes.outputs.last-tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for changes since last tag
+        id: check-changes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last-tag=$LAST_TAG" >> $GITHUB_OUTPUT
+          
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "::notice::No previous tags found. This will be the first release."
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          CHANGES=$(git log --oneline "$LAST_TAG..HEAD" 2>/dev/null | wc -l)
+          if [[ $CHANGES -gt 0 ]]; then
+            echo "::notice::Found $CHANGES commits since $LAST_TAG"
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::No changes found since $LAST_TAG"
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+    needs: [determine-release-type, check-changes]
+    if: needs.check-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      new-version: ${{ steps.new-version.outputs.new-version }}
+      release-url: ${{ steps.create-release.outputs.html_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install semver==${{ env.SEMVER_PYTHON_PACKAGE_VERSION }}
+
+      - name: Get current version
+        id: current-version
+        run: |
+          VERSION=$(cat VERSION | tr -d '\n\r ')
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format in VERSION file: $VERSION"
+            exit 1
+          fi
+          echo "current-version=$VERSION" >> $GITHUB_OUTPUT
+          echo "::notice::Current version: $VERSION"
+
+      - name: Calculate new version
+        id: new-version
+        run: |
+          python3 <<'EOF'
+          import os
+          import sys
+          import semver
+
+          try:
+              current = semver.Version.parse(os.environ["CURRENT"])
+              bump_type = os.environ["BUMP"]
+              
+              if bump_type == "major":
+                  new = current.bump_major()
+              elif bump_type == "minor":
+                  new = current.bump_minor()
+              elif bump_type == "patch":
+                  new = current.bump_patch()
+              else:
+                  print(f"::error::Invalid bump type: {bump_type}")
+                  sys.exit(1)
+              
+              new_str = str(new)
+              print(f"::notice::Bumping from {current} to {new_str} ({bump_type})")
+              
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"new-version={new_str}\n")
+                  
+          except Exception as e:
+              print(f"::error::Failed to calculate version: {e}")
+              sys.exit(1)
+          EOF
+        env:
+          CURRENT: ${{ steps.current-version.outputs.current-version }}
+          BUMP: ${{ needs.determine-release-type.outputs.release-type }}
+
+      - name: Update VERSION file
+        run: |
+          echo "${{ steps.new-version.outputs.new-version }}" > VERSION
+          echo "::notice::Updated VERSION file to ${{ steps.new-version.outputs.new-version }}"
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          NEW_VERSION="${{ steps.new-version.outputs.new-version }}"
+          RELEASE_TYPE="${{ needs.determine-release-type.outputs.release-type }}"
+          TRIGGERED_BY="${{ needs.determine-release-type.outputs.triggered-by }}"
+          RELEASE_NOTES="${{ github.event.inputs.release_notes }}"
+          LAST_TAG="${{ needs.check-changes.outputs.last-tag }}"
+          
+          # Create release notes file
+          cat > RELEASE_NOTES.md << ENDOFNOTES
+          ## Release v${NEW_VERSION}
+          
+          **Release Type:** ${RELEASE_TYPE^}
+          **Triggered By:** @${TRIGGERED_BY}
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ### Release Notes
+          ${RELEASE_NOTES}
+          
+          ### Changes
+          ENDOFNOTES
+          
+          # Add commit history
+          if [[ -z "$LAST_TAG" ]]; then
+            git log --oneline --reverse --pretty=format:"- %h: %s" >> RELEASE_NOTES.md
+          else
+            git log --oneline --reverse --pretty=format:"- %h: %s" "$LAST_TAG..HEAD" >> RELEASE_NOTES.md
+          fi
+          
+          # Add statistics
+          echo -e "\n\n### Statistics" >> RELEASE_NOTES.md
+          if [[ -n "$LAST_TAG" ]]; then
+            echo "- Commits: $(git rev-list --count $LAST_TAG..HEAD)" >> RELEASE_NOTES.md
+            echo "- Contributors: $(git log $LAST_TAG..HEAD --format='%an' | sort -u | wc -l)" >> RELEASE_NOTES.md
+            echo "- Files changed: $(git diff --stat $LAST_TAG..HEAD | tail -1)" >> RELEASE_NOTES.md
+          else
+            echo "- First release" >> RELEASE_NOTES.md
+          fi
+          
+          # Output for GitHub Action
+          {
+            echo 'release-notes<<EOF'
+            cat RELEASE_NOTES.md
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Commit and tag (Dry Run Check)
+        if: ${{ !github.event.inputs.dry_run || github.event.inputs.dry_run == 'false' }}
+        run: |
+          NEW_VERSION="${{ steps.new-version.outputs.new-version }}"
+          TRIGGERED_BY="${{ needs.determine-release-type.outputs.triggered-by }}"
+          
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add VERSION
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]" \
+                     -m "Release type: ${{ needs.determine-release-type.outputs.release-type }}" \
+                     -m "Triggered by: @$TRIGGERED_BY" \
+                     -m "Release notes: ${{ github.event.inputs.release_notes }}"
+          
+          git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION" -m "$(cat RELEASE_NOTES.md)"
+          
+          git push origin main
+          git push origin "v$NEW_VERSION"
+          
+          echo "::notice::Successfully created tag v$NEW_VERSION"
+
+      - name: Create GitHub Release
+        id: create-release
+        if: ${{ !github.event.inputs.dry_run || github.event.inputs.dry_run == 'false' }}
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "v${{ steps.new-version.outputs.new-version }}"
+          name: "v${{ steps.new-version.outputs.new-version }}"
+          body: ${{ steps.release-notes.outputs.release-notes }}
+          draft: false
+          prerelease: false
+          generateReleaseNotes: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dry Run Summary
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "## 🔍 DRY RUN MODE - No actual release created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Would have created:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.new-version.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** v${{ steps.new-version.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Type:** ${{ needs.determine-release-type.outputs.release-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Notes Preview:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat RELEASE_NOTES.md >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  notify-completion:
+    needs: [determine-release-type, check-changes, create-release]
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# 📦 Release Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.check-changes.outputs.has-changes }}" == "false" ]]; then
+            echo "## ⏭️ No Release Created" >> $GITHUB_STEP_SUMMARY
+            echo "No changes detected since the last release." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.create-release.result }}" == "success" ]]; then
+            if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+              echo "## 🔍 Dry Run Completed Successfully" >> $GITHUB_STEP_SUMMARY
+              echo "- **Would create version:** ${{ needs.create-release.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "## ✅ Release Completed Successfully" >> $GITHUB_STEP_SUMMARY
+              echo "- **New version:** ${{ needs.create-release.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Release URL:** ${{ needs.create-release.outputs.release-url }}" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "- **Release type:** ${{ needs.determine-release-type.outputs.release-type }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Triggered by:** @${{ needs.determine-release-type.outputs.triggered-by }}" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.create-release.result }}" == "skipped" ]]; then
+            echo "## ⏭️ Release Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "No changes found since the last tag." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Release Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Debug Information:" >> $GITHUB_STEP_SUMMARY
+            echo "- **Check changes result:** ${{ needs.check-changes.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Create release result:** ${{ needs.create-release.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Workflow run:* [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send notification on failure
+        if: failure() && (github.event.inputs.dry_run != 'true')
+        run: |
+          echo "::error::Release workflow failed. Check logs for details."
