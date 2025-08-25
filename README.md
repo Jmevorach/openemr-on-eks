@@ -38,6 +38,7 @@ This deployment provides a production-ready OpenEMR system on Amazon EKS with **
 
 ### **�  Workflows & Operations**
 - [Common Workflows](#-common-workflows)
+- [Manual Release System](#-manual-release-system)
 
 ### **📚 Additional Resources**
 - [Additional Resources](#-additional-resources)
@@ -1452,6 +1453,36 @@ Our enhanced backup and restore system provides **simple, reliable, and comprehe
    - Update DNS records
    - Notify users of recovery
 
+## 🚀 Manual Release System
+
+The project includes a manual release system that manages versions and creates GitHub releases:
+
+#### **📅 Release Schedule**
+- **Manual releases only**: Triggered when you want them
+- **Full user tracking**: Records who triggered each release
+- **Complete audit trail**: All release metadata includes trigger source
+
+#### **🔧 Key Features**
+- **Semantic versioning**: Automatic version calculation and file updates
+- **Change detection**: Only releases when there are actual changes
+- **User accountability**: Every release shows who triggered it
+- **Required documentation**: All releases must include meaningful release notes
+- **Workflow integration**: Direct links to GitHub Actions runs
+- **Dry run mode**: Test releases without creating them
+
+#### **🚀 Quick Start**
+```bash
+# Create release via GitHub Actions
+# Go to Actions > Manual Releases > Run workflow
+# Choose type: major (+1.0.0) | minor (+0.1.0) | patch (+0.0.1)
+# **Required**: Add release notes describing changes
+# Click Run workflow
+```
+
+**Note**: Release notes are **required** for all manual releases to ensure proper documentation.
+
+For complete release system documentation, see [Manual Releases Guide](docs/MANUAL_RELEASES.md).
+
 ## 📚 Additional Resources
 
 ### **Documentation**
@@ -1459,6 +1490,7 @@ Our enhanced backup and restore system provides **simple, reliable, and comprehe
 - [Autoscaling Guide](docs/AUTOSCALING_GUIDE.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 - [Backup & Restore Guide](docs/BACKUP_RESTORE_GUIDE.md)
+- [Manual Releases Guide](docs/MANUAL_RELEASES.md)
 - [Monitoring Setup](monitoring/README.md)
 
 
