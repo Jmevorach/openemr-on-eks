@@ -183,6 +183,7 @@ sed -i.bak "s/\${OPENEMR_VERSION}/$OPENEMR_VERSION/g" deployment.yaml
 sed -i.bak "s/\${DOMAIN_NAME}/$DOMAIN_NAME/g" deployment.yaml
 sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" deployment.yaml
 sed -i.bak "s/\${CLUSTER_NAME}/$CLUSTER_NAME/g" deployment.yaml
+sed -i.bak "s|\${OPENEMR_ROLE_ARN}|$OPENEMR_ROLE_ARN|g" deployment.yaml
 
 # Substitute OpenEMR role ARN for IRSA annotation
 if [ -n "$OPENEMR_ROLE_ARN" ]; then
