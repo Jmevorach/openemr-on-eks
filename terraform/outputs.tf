@@ -98,18 +98,32 @@ output "alb_logs_bucket_name" {
   value       = aws_s3_bucket.alb_logs.bucket
 }
 
+output "oidc_provider_arn" {
+  description = "ARN of the EKS OIDC provider for IRSA"
+  value       = module.eks.oidc_provider_arn
+}
+
+output "openemr_role_arn" {
+  description = "ARN of the OpenEMR IAM role for IRSA"
+  value       = aws_iam_role.openemr.arn
+}
+
 output "alb_logs_bucket_arn" {
   description = "ARN of the S3 bucket for ALB access logs"
   value       = aws_s3_bucket.alb_logs.arn
 }
 
 output "cloudwatch_log_groups" {
-  description = "CloudWatch log group names for OpenEMR"
+  description = "CloudWatch log group names for OpenEMR 7.0.3.4"
   value = {
-    application = aws_cloudwatch_log_group.openemr_app.name
-    access      = aws_cloudwatch_log_group.openemr_access.name
-    error       = aws_cloudwatch_log_group.openemr_error.name
-    audit       = aws_cloudwatch_log_group.openemr_audit.name
+    application     = aws_cloudwatch_log_group.openemr_app.name
+    access          = aws_cloudwatch_log_group.openemr_access.name
+    error           = aws_cloudwatch_log_group.openemr_error.name
+    audit           = aws_cloudwatch_log_group.openemr_audit.name
+    audit_detailed  = aws_cloudwatch_log_group.openemr_audit_detailed.name
+    system          = aws_cloudwatch_log_group.openemr_system.name
+    php_error       = aws_cloudwatch_log_group.openemr_php_error.name
+    fluent_bit      = aws_cloudwatch_log_group.fluent_bit_metrics.name
   }
 }
 

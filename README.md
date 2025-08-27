@@ -30,6 +30,7 @@ This deployment provides a production-ready OpenEMR system on Amazon EKS with **
 - [Terraform Organization](#%EF%B8%8F-terraform-infrastructure-organization)
 - [Kubernetes Manifests](#-working-with-kubernetes-manifests)
 - [Deployment Workflow](#-deployment-workflow)
+- [Backup & Restore System](#-backup--restore-system)
 
 ### **⚙️ Operations**
 - [Monitoring & Observability](#-monitoring--observability)
@@ -250,8 +251,9 @@ Next steps for first-time deployment:
    • Set up cost alerts and budgets
 
 📊 Monitoring Setup:
-   • CloudWatch logging with Fluent Bit (included in OpenEMR deployment)
-   • Basic deployment: CloudWatch logs only
+   • CloudWatch logging with Fluent Bit sidecar (included in OpenEMR deployment)
+• Basic deployment: CloudWatch logs only
+• **✅ Logging Status**: Fully functional with test logs, Apache logs, and forward protocol support
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
      - Prometheus v75.18.1 (metrics & alerting)
@@ -539,7 +541,7 @@ openemr-on-eks/
 │   ├── hpa.yaml                        # Horizontal Pod Autoscaler configuration
 │   ├── ingress.yaml                    # Ingress controller configuration
 │   ├── ssl-renewal.yaml                # SSL certificate renewal automation
-│   ├── logging.yaml                    # Fluent Bit DaemonSet for log collection
+│   ├── logging.yaml                    # Fluent Bit sidecar configuration for log collection
 │   └── openemr-credentials.txt         # OpenEMR admin credentials (created during deployment)
 ├── monitoring/                         # Advanced observability stack (optional)
 │   ├── install-monitoring.sh           # Main installation script
@@ -1098,7 +1100,7 @@ The Kubernetes manifests are organized for clear separation of concerns:
 - **`network-policies.yaml`** - Networking policies for our deployment
 
 ### **Observability & Operations**
-- **`logging.yaml`** - Fluent Bit DaemonSet for log collection
+- **`logging.yaml`** - Fluent Bit sidecar configuration for log collection
 - **`hpa.yaml`** - Horizontal Pod Autoscaler configuration
 - **`ssl-renewal.yaml`** - Automated SSL certificate renewal
 
@@ -1177,7 +1179,7 @@ The `deploy.sh` script orchestrates the deployment in the correct order:
    └── Create services
 
 6. Observability Setup
-   ├── Deploy Fluent Bit for logging
+   ├── Deploy Fluent Bit sidecar for logging
    └── Set up CloudWatch log forwarding
 
 7. Ingress Configuration
@@ -1495,6 +1497,7 @@ For complete release system documentation, see [Manual Releases Guide](docs/MANU
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 - [Backup & Restore Guide](docs/BACKUP_RESTORE_GUIDE.md)
 - [Manual Releases Guide](docs/MANUAL_RELEASES.md)
+- [Logging Guide](docs/LOGGING_GUIDE.md) - OpenEMR 7.0.3.4 Enhanced Logging
 - [Monitoring Setup](monitoring/README.md)
 
 

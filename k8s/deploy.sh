@@ -142,6 +142,13 @@ ALB_LOGS_BUCKET=$(terraform output -raw alb_logs_bucket_name)
 WAF_ACL_ARN=$(terraform output -raw waf_web_acl_arn 2>/dev/null || echo "")
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
+# Get OpenEMR IAM role ARN for IRSA
+OPENEMR_ROLE_ARN=$(terraform output -raw openemr_role_arn 2>/dev/null || echo "")
+if [ -z "$OPENEMR_ROLE_ARN" ]; then
+    echo -e "${YELLOW}Warning: Could not retrieve OpenEMR role ARN from Terraform${NC}"
+    echo -e "${YELLOW}IRSA annotation may not work properly${NC}"
+fi
+
 # Get autoscaling configuration
 OPENEMR_MIN_REPLICAS=$(terraform output -json openemr_autoscaling_config | jq -r '.min_replicas')
 OPENEMR_MAX_REPLICAS=$(terraform output -json openemr_autoscaling_config | jq -r '.max_replicas')
@@ -174,6 +181,16 @@ sed -i.bak "s/\${EFS_ID}/$EFS_ID/g" storage.yaml
 sed -i.bak "s/\${AWS_ACCOUNT_ID}/$AWS_ACCOUNT_ID/g" deployment.yaml
 sed -i.bak "s/\${OPENEMR_VERSION}/$OPENEMR_VERSION/g" deployment.yaml
 sed -i.bak "s/\${DOMAIN_NAME}/$DOMAIN_NAME/g" deployment.yaml
+sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" deployment.yaml
+sed -i.bak "s/\${CLUSTER_NAME}/$CLUSTER_NAME/g" deployment.yaml
+
+# Substitute OpenEMR role ARN for IRSA annotation
+if [ -n "$OPENEMR_ROLE_ARN" ]; then
+    sed -i.bak "s|\${OPENEMR_ROLE_ARN}|$OPENEMR_ROLE_ARN|g" security.yaml
+else
+    echo -e "${RED}Error: OpenEMR role ARN not available. Cannot configure IRSA.${NC}"
+    exit 1
+fi
 
 # Configure OpenEMR feature environment variables based on Terraform settings
 echo -e "${YELLOW}Configuring OpenEMR feature environment variables...${NC}"
@@ -214,6 +231,7 @@ fi
 sed -i.bak "s/\${AWS_ACCOUNT_ID}/$AWS_ACCOUNT_ID/g" logging.yaml
 sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" logging.yaml
 sed -i.bak "s/\${CLUSTER_NAME}/$CLUSTER_NAME/g" logging.yaml
+sed -i.bak "s|\${OPENEMR_ROLE_ARN}|$OPENEMR_ROLE_ARN|g" logging.yaml
 sed -i.bak "s/\${S3_BUCKET_NAME}/$ALB_LOGS_BUCKET/g" ingress.yaml
 
 # Configure WAF ACL ARN if available
@@ -468,6 +486,12 @@ fi
 echo -e "${YELLOW}Applying security policies...${NC}"
 kubectl apply -f security.yaml
 
+# Apply logging configuration FIRST (before deployment)
+echo -e "${YELLOW}Setting up logging...${NC}"
+sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" logging.yaml
+sed -i.bak "s/\${CLUSTER_NAME}/$CLUSTER_NAME/g" logging.yaml
+kubectl apply -f logging.yaml
+
 # Apply network policies based on feature configuration
 echo -e "${YELLOW}Applying network policies...${NC}"
 # Always apply base access policy
@@ -519,11 +543,8 @@ fi
 kubectl apply -f ingress.yaml
 echo -e "${GREEN}✅ Ingress applied with ALB and WAF support${NC}"
 
-# Apply logging configuration
-echo -e "${YELLOW}Setting up logging...${NC}"
-sed -i.bak "s/\${AWS_REGION}/$AWS_REGION/g" logging.yaml
-sed -i.bak "s/\${CLUSTER_NAME}/$CLUSTER_NAME/g" logging.yaml
-kubectl apply -f logging.yaml
+# Logging configuration already applied earlier
+echo -e "${GREEN}✅ Logging configuration applied${NC}"
 
 # EKS Auto Mode handles logging configuration automatically
 echo -e "${GREEN}✅ EKS Auto Mode manages compute and logging automatically${NC}"

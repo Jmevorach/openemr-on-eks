@@ -25,12 +25,11 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
     spec:
+      serviceAccountName: openemr-sa
       securityContext:
         runAsNonRoot: false
-        fsGroup: 0
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: openemr-sa
 
       containers:
       - name: openemr
@@ -190,6 +189,56 @@ spec:
         - name: openemr-letsencrypt
           mountPath: /etc/letsencrypt
 
+      - name: fluent-bit-sidecar
+        image: fluent/fluent-bit:4.0.8
+        ports:
+        - containerPort: 2020
+          name: fluent-bit-http
+          protocol: TCP
+        - containerPort: 24224
+          name: fluent-bit-fwd
+          protocol: TCP
+        env:
+        - name: AWS_REGION
+          value: "${AWS_REGION}"
+        - name: CLUSTER_NAME
+          value: "${CLUSTER_NAME}"
+        - name: AWS_WEB_IDENTITY_TOKEN_FILE
+          value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+        - name: AWS_ROLE_ARN
+          value: "${OPENEMR_ROLE_ARN}"
+
+
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+        volumeMounts:
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/
+        - name: tmp
+          mountPath: /tmp
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 2020
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 2020
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+
       volumes:
       - name: db-credentials
         secret:
@@ -206,6 +255,12 @@ spec:
       - name: openemr-letsencrypt
         persistentVolumeClaim:
           claimName: openemr-letsencrypt-pvc
+      - name: fluent-bit-config
+        configMap:
+          name: fluent-bit-sidecar-config
+      - name: tmp
+        emptyDir: {}
+
 
       # EKS Auto Mode handles node selection, scheduling, and optimal placement automatically
       # Add tolerations for EKS Auto Mode nodes
@@ -217,12 +272,3 @@ spec:
         operator: "Equal"
         value: "auto-mode"
         effect: "NoSchedule"
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: openemr-sa
-  namespace: openemr
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/openemr-service-account-role
-automountServiceAccountToken: true

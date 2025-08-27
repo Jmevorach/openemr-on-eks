@@ -10,6 +10,12 @@ module "eks" {
   compute_config = {
     enabled    = true
     node_pools = ["general-purpose", "system"]
+    
+    # Configure IMDS to allow pods to access instance metadata
+    metadata_options = {
+      http_put_response_hop_limit = 2
+      http_tokens                 = "required"
+    }
   }
 
   vpc_id     = module.vpc.vpc_id
@@ -37,13 +43,8 @@ module "eks" {
   enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   # --- Managed Add-ons ---
-  addons = {
-    # Must be present for Pod Identity to work - deployed before compute
-    eks-pod-identity-agent = {
-      addon_version  = "v1.3.8-eksbuild.2" # pin
-      before_compute = true
-    }
-  }
+  # Note: Using IRSA instead of Pod Identity for better reliability
+  addons = {}
 
   # Separate addon configuration for EFS CSI to ensure proper dependencies
   # This will be added after compute nodes are ready and have internet access
@@ -97,6 +98,9 @@ resource "aws_eks_addon" "efs_csi_driver" {
 
   tags = local.common_tags
 }
+
+# Note: Pod Identity is automatically handled by EKS Auto Mode
+# No separate addon configuration needed
 
 # EKS Pod Identity role + association (for EFS CSI)
 module "aws_efs_csi_pod_identity" {
