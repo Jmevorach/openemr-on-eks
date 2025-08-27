@@ -576,7 +576,8 @@ openemr-on-eks/
     ├── AUTOSCALING_GUIDE.md            # Autoscaling configuration and optimization
     ├── MANUAL_RELEASES.md              # Guide to the OpenEMR on EKS release system
     ├── TROUBLESHOOTING.md              # Troubleshooting and solutions
-    └── BACKUP_RESTORE_GUIDE.md         # Comprehensive backup and restore guide
+    ├── BACKUP_RESTORE_GUIDE.md         # Comprehensive backup and restore guide
+    └── LOGGING_GUIDE.md                # OpenEMR 7.0.3.4 Enhanced Logging
 ```
 
 ## 💰 EKS Auto Mode Pricing Structure
