@@ -1498,7 +1498,7 @@ For complete release system documentation, see [Manual Releases Guide](docs/MANU
 - [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 - [Backup & Restore Guide](docs/BACKUP_RESTORE_GUIDE.md)
 - [Manual Releases Guide](docs/MANUAL_RELEASES.md)
-- [Logging Guide](docs/LOGGING_GUIDE.md) - OpenEMR 7.0.3.4 Enhanced Logging
+- [Logging Guide](docs/LOGGING_GUIDE.md)
 - [Monitoring Setup](monitoring/README.md)
 
 
