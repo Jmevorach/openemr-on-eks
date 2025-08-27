@@ -457,7 +457,7 @@ class ADODB_mysqli_log extends ADODB_mysqli
 │   └── placeholder.log      # Placeholder for system logs
 ├── audit_logs/              # Detailed audit trails
 │   └── placeholder.log      # Placeholder for audit logs
-└── methods/                  # Legacy method logs
+└── methods/                 # Legacy method logs
     └── existing_logs.log
 ```
 
