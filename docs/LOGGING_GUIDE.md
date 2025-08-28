@@ -607,9 +607,3 @@ kubectl exec <pod-name> -c openemr -n openemr -- touch /var/log/openemr/placehol
 - **Update configurations**: Keep Fluent Bit configuration current
 - **Monitor resource usage**: Track CPU and memory consumption
 - **Review retention policies**: Ensure compliance with data retention requirements
-
----
-
-*Last updated: August 27, 2025*
-*Version: 7.0.3.4*
-*Status: Production Ready*
