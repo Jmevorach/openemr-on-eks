@@ -23,7 +23,7 @@ show_usage() {
 }
 
 get_current_ip() {
-    curl -s https://checkip.amazonaws.com 2>/dev/null || curl -s http://whatismyip.akamai.com/ 2>/dev/null || echo "Unable to detect IP"
+    curl -s https://checkip.amazonaws.com 2>/dev/null || curl -s https://whatismyip.akamai.com/ 2>/dev/null || echo "Unable to detect IP"
 }
 
 get_allowed_ips() {
