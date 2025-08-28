@@ -81,6 +81,9 @@ restore_deployment_yaml() {
     if git checkout HEAD -- k8s/deployment.yaml 2>/dev/null; then
         echo -e "${GREEN}✅ deployment.yaml restored from git${NC}"
         return
+    else
+        echo -e "${YELLOW}⚠️  Could not restore deployment.yaml from git${NC}"
+        return
     fi
 }
 
@@ -92,6 +95,9 @@ restore_service_yaml() {
     cd "$PROJECT_ROOT"
     if git checkout HEAD -- k8s/service.yaml 2>/dev/null; then
         echo -e "${GREEN}✅ service.yaml restored from git${NC}"
+        return
+    else
+        echo -e "${YELLOW}⚠️  Could not restore service.yaml from git${NC}"
         return
     fi
 }
