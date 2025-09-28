@@ -637,101 +637,101 @@ cd ../scripts
 
 ```
 openemr-on-eks/
-├── .github/                            # GitHub Actions and workflows
-│   ├── README.md                       # Comprehensive GitHub workflows documentation
-│   └── workflows/                      # CI/CD automation workflows
-│       ├── ci-cd-tests.yml             # Automated testing and quality assurance
-│       ├── manual-releases.yml         # Manual release workflow for version management
-│       └── version-check.yml           # Automated version awareness checking
-├── terraform/                          # Infrastructure as Code (Modular Structure)
-│   ├── README.md                       # Complete Terraform infrastructure documentation
-│   ├── main.tf                         # Terraform providers and data sources
-│   ├── variables.tf                    # Input variables and defaults (including autoscaling)
-│   ├── outputs.tf                      # Output values for other components
-│   ├── vpc.tf                          # VPC and networking resources
-│   ├── eks.tf                          # EKS cluster with Auto Mode
-│   ├── kms.tf                          # KMS keys and encryption
-│   ├── rds.tf                          # Aurora Serverless V2 database
-│   ├── elasticache.tf                  # Valkey Serverless cache
-│   ├── efs.tf                          # EFS file system with elastic performance
-│   ├── waf.tf                          # WAFv2 security configuration
-│   ├── s3.tf                           # S3 buckets and policies
-│   ├── cloudwatch.tf                   # CloudWatch log groups
-│   ├── iam.tf                          # IAM roles and policies
-│   ├── cloudtrail.tf                   # CloudTrail logging
-│   ├── terraform.tfvars.example        # Example variable values with autoscaling configs
-│   ├── terraform-testing.tfvars        # Testing configuration (deletion protection disabled)
-│   └── terraform-production.tfvars     # Production configuration reference (deletion protection enabled)
-├── k8s/                                # Kubernetes manifests
-│   ├── README.md                       # Complete Kubernetes manifests documentation
-│   ├── deploy.sh                       # Main deployment script (deploys OpenEMR to the EKS cluster)
-│   ├── namespace.yaml                  # Namespace definitions with Pod Security Standards
-│   ├── storage.yaml                    # Storage classes (EFS for OpenEMR, optimized EBS for monitoring)
-│   ├── security.yaml                   # RBAC, service accounts, and security policies
-│   ├── network-policies.yaml           # Network policies for our deployment
-│   ├── secrets.yaml                    # OpenEMR Admin, Database and Valkey credential templates
-│   ├── deployment.yaml                 # OpenEMR application deployment with MYSQL_DATABASE env var
-│   ├── service.yaml                    # Defines OpenEMR service and load balancer configuration
-│   ├── hpa.yaml                        # Horizontal Pod Autoscaler configuration
-│   ├── ingress.yaml                    # Ingress controller configuration
-│   ├── ssl-renewal.yaml                # SSL certificate renewal automation
-│   ├── logging.yaml                    # Fluent Bit sidecar configuration for log collection
-│   └── openemr-credentials.txt         # OpenEMR admin credentials (created during deployment)
-├── monitoring/                         # Advanced observability stack (optional)
-│   ├── install-monitoring.sh           # Main installation script
-│   ├── README.md                       # Comprehensive monitoring documentation
-│   ├── openemr-monitoring.conf.example # Configuration template (manual creation)
-│   ├── openemr-monitoring.conf         # Configuration file (optional, manual creation)
-│   ├── prometheus-values.yaml          # Generated Helm values (created during installation)
-│   ├── prometheus-values.yaml.bak      # Backup of values file (created during installation)
-│   ├── openemr-monitoring.log          # Installation log (created during installation)
-│   ├── openemr-monitoring-audit.log    # Audit trail (created during installation)
-│   ├── helm-install-kps.log            # Prometheus stack install log (created during installation)
-│   ├── helm-install-loki.log           # Loki install log (created during installation)
-│   ├── debug-YYYYMMDD_HHMMSS.log       # Debug info on errors (created on installation errors)
-│   ├── credentials/                    # Secure credentials directory (created during installation)
-│   │   ├── monitoring-credentials.txt  # Access credentials for all services (created during installation)
-│   │   └── grafana-admin-password      # Grafana admin password only (created during installation)
-│   └── backups/                        # Configuration backups directory (created during installation, future use)
-├── scripts/                            # Operational and deployment scripts
-│   ├── README.md                       # Complete scripts documentation and maintenance guide
-│   ├── check-openemr-versions.sh       # OpenEMR version discovery and management
-│   ├── version-manager.sh              # Comprehensive version awareness checking
-│   ├── validate-deployment.sh          # Pre-deployment validation and health checks
-│   ├── validate-efs-csi.sh             # EFS CSI driver validation and troubleshooting
-│   ├── clean-deployment.sh             # Enhanced deployment cleanup (deletes PVCs and stale configs)
-│   ├── restore-defaults.sh             # Restore deployment files to default template state
-│   ├── openemr-feature-manager.sh      # OpenEMR feature configuration management
-│   ├── ssl-cert-manager.sh             # SSL certificate management (ACM integration)
-│   ├── ssl-renewal-manager.sh          # Self-signed certificate renewal automation
-│   ├── cluster-security-manager.sh     # Cluster access security management
-│   ├── backup.sh                       # Cross-region backup procedures
-│   ├── restore.sh                      # Cross-region disaster recovery (with DB reconfiguration)
-│   ├── destroy.sh                      # Complete infrastructure destruction (bulletproof cleanup)
-│   ├── test-end-to-end-backup-restore.sh # End-to-end backup/restore testing
-│   ├── run-test-suite.sh               # CI/CD test suite runner
-│   └── test-config.yaml                # Test configuration for CI/CD framework
-├── docs/                               # Complete documentation
-│   ├── README.md                       # Complete documentation index and maintenance guide
-│   ├── DEPLOYMENT_GUIDE.md             # Step-by-step deployment guide
-│   ├── AUTOSCALING_GUIDE.md            # Autoscaling configuration and optimization
-│   ├── MANUAL_RELEASES.md              # Guide to the OpenEMR on EKS release system
-│   ├── VERSION_MANAGEMENT.md           # Version awareness and dependency management
-│   ├── TROUBLESHOOTING.md              # Troubleshooting and solutions
-│   ├── BACKUP_RESTORE_GUIDE.md         # Comprehensive backup and restore guide
-│   ├── LOGGING_GUIDE.md                # OpenEMR 7.0.3.4 Enhanced Logging
-│   ├── TESTING_GUIDE.md                # Comprehensive CI/CD testing framework
+├── .github/                               # GitHub Actions and workflows
+│   ├── README.md                          # Comprehensive GitHub workflows documentation
+│   └── workflows/                         # CI/CD automation workflows
+│       ├── ci-cd-tests.yml                # Automated testing and quality assurance
+│       ├── manual-releases.yml            # Manual release workflow for version management
+│       └── version-check.yml              # Automated version awareness checking
+├── terraform/                             # Infrastructure as Code (Modular Structure)
+│   ├── README.md                          # Complete Terraform infrastructure documentation
+│   ├── main.tf                            # Terraform providers and data sources
+│   ├── variables.tf                       # Input variables and defaults (including autoscaling)
+│   ├── outputs.tf                         # Output values for other components
+│   ├── vpc.tf                             # VPC and networking resources
+│   ├── eks.tf                             # EKS cluster with Auto Mode
+│   ├── kms.tf                             # KMS keys and encryption
+│   ├── rds.tf                             # Aurora Serverless V2 database
+│   ├── elasticache.tf                     # Valkey Serverless cache
+│   ├── efs.tf                             # EFS file system with elastic performance
+│   ├── waf.tf                             # WAFv2 security configuration
+│   ├── s3.tf                              # S3 buckets and policies
+│   ├── cloudwatch.tf                      # CloudWatch log groups
+│   ├── iam.tf                             # IAM roles and policies
+│   ├── cloudtrail.tf                      # CloudTrail logging
+│   ├── terraform.tfvars.example           # Example variable values with autoscaling configs
+│   ├── terraform-testing.tfvars           # Testing configuration (deletion protection disabled)
+│   └── terraform-production.tfvars        # Production configuration reference (deletion protection enabled)
+├── k8s/                                   # Kubernetes manifests
+│   ├── README.md                          # Complete Kubernetes manifests documentation
+│   ├── deploy.sh                          # Main deployment script (deploys OpenEMR to the EKS cluster)
+│   ├── namespace.yaml                     # Namespace definitions with Pod Security Standards
+│   ├── storage.yaml                       # Storage classes (EFS for OpenEMR, optimized EBS for monitoring)
+│   ├── security.yaml                      # RBAC, service accounts, and security policies
+│   ├── network-policies.yaml              # Network policies for our deployment
+│   ├── secrets.yaml                       # OpenEMR Admin, Database and Valkey credential templates
+│   ├── deployment.yaml                    # OpenEMR application deployment with MYSQL_DATABASE env var
+│   ├── service.yaml                       # Defines OpenEMR service and load balancer configuration
+│   ├── hpa.yaml                           # Horizontal Pod Autoscaler configuration
+│   ├── ingress.yaml                       # Ingress controller configuration
+│   ├── ssl-renewal.yaml                   # SSL certificate renewal automation
+│   ├── logging.yaml                       # Fluent Bit sidecar configuration for log collection
+│   └── openemr-credentials.txt            # OpenEMR admin credentials (created during deployment)
+├── monitoring/                            # Advanced observability stack (optional)
+│   ├── install-monitoring.sh              # Main installation script
+│   ├── README.md                          # Comprehensive monitoring documentation
+│   ├── openemr-monitoring.conf.example    # Configuration template (manual creation)
+│   ├── openemr-monitoring.conf            # Configuration file (optional, manual creation)
+│   ├── prometheus-values.yaml             # Generated Helm values (created during installation)
+│   ├── prometheus-values.yaml.bak         # Backup of values file (created during installation)
+│   ├── openemr-monitoring.log             # Installation log (created during installation)
+│   ├── openemr-monitoring-audit.log       # Audit trail (created during installation)
+│   ├── helm-install-kps.log               # Prometheus stack install log (created during installation)
+│   ├── helm-install-loki.log              # Loki install log (created during installation)
+│   ├── debug-YYYYMMDD_HHMMSS.log          # Debug info on errors (created on installation errors)
+│   ├── credentials/                       # Secure credentials directory (created during installation)
+│   │   ├── monitoring-credentials.txt     # Access credentials for all services (created during installation)
+│   │   └── grafana-admin-password         # Grafana admin password only (created during installation)
+│   └── backups/                           # Configuration backups directory (created during installation, future use)
+├── scripts/                               # Operational and deployment scripts
+│   ├── README.md                          # Complete scripts documentation and maintenance guide
+│   ├── check-openemr-versions.sh          # OpenEMR version discovery and management
+│   ├── version-manager.sh                 # Comprehensive version awareness checking
+│   ├── validate-deployment.sh             # Pre-deployment validation and health checks
+│   ├── validate-efs-csi.sh                # EFS CSI driver validation and troubleshooting
+│   ├── clean-deployment.sh                # Enhanced deployment cleanup (deletes PVCs and stale configs)
+│   ├── restore-defaults.sh                # Restore deployment files to default template state
+│   ├── openemr-feature-manager.sh         # OpenEMR feature configuration management
+│   ├── ssl-cert-manager.sh                # SSL certificate management (ACM integration)
+│   ├── ssl-renewal-manager.sh             # Self-signed certificate renewal automation
+│   ├── cluster-security-manager.sh        # Cluster access security management
+│   ├── backup.sh                          # Cross-region backup procedures
+│   ├── restore.sh                         # Cross-region disaster recovery (with DB reconfiguration)
+│   ├── destroy.sh                         # Complete infrastructure destruction (bulletproof cleanup)
+│   ├── test-end-to-end-backup-restore.sh  # End-to-end backup/restore testing
+│   ├── run-test-suite.sh                  # CI/CD test suite runner
+│   └── test-config.yaml                   # Test configuration for CI/CD framework
+├── docs/                                  # Complete documentation
+│   ├── README.md                          # Complete documentation index and maintenance guide
+│   ├── DEPLOYMENT_GUIDE.md                # Step-by-step deployment guide
+│   ├── AUTOSCALING_GUIDE.md               # Autoscaling configuration and optimization
+│   ├── MANUAL_RELEASES.md                 # Guide to the OpenEMR on EKS release system
+│   ├── VERSION_MANAGEMENT.md              # Version awareness and dependency management
+│   ├── TROUBLESHOOTING.md                 # Troubleshooting and solutions
+│   ├── BACKUP_RESTORE_GUIDE.md            # Comprehensive backup and restore guide
+│   ├── LOGGING_GUIDE.md                   # OpenEMR 7.0.3.4 Enhanced Logging
+│   ├── TESTING_GUIDE.md                   # Comprehensive CI/CD testing framework
 │   └── END_TO_END_TESTING_REQUIREMENTS.md # Mandatory testing procedure
-├── images/                             # Visual assets and branding materials
-│   ├── README.md                       # Complete images documentation and usage guidelines
-│   ├── openemr_on_eks_logo.png         # Main project logo for documentation and branding (optimized for web)
-│   └── openemr_on_eks_github_banner.png # GitHub repository banner for social media display
-├── .pre-commit-config.yaml             # Pre-commit hooks configuration
-├── .yamllint                           # YAML linting configuration (relaxed rules)
-├── .markdownlint.json                  # Markdown linting configuration (relaxed rules)
-├── VERSION                             # Current project version
-├── versions.yaml                       # Version awareness configuration
-└── LICENSE                             # Project license
+├── images/                                # Visual assets and branding materials
+│   ├── README.md                          # Complete images documentation and usage guidelines
+│   ├── openemr_on_eks_logo.png            # Main project logo for documentation and branding (optimized for web)
+│   └── openemr_on_eks_github_banner.png   # GitHub repository banner for social media display
+├── .pre-commit-config.yaml                # Pre-commit hooks configuration
+├── .yamllint                              # YAML linting configuration (relaxed rules)
+├── .markdownlint.json                     # Markdown linting configuration (relaxed rules)
+├── VERSION                                # Current project version
+├── versions.yaml                          # Version awareness configuration
+└── LICENSE                                # Project license
 ```
 
 ## 💰 EKS Auto Mode Pricing Structure
@@ -1415,8 +1415,8 @@ kubectl get secrets -n openemr                     # Secret resources
 
 ```bash
 # Application debugging
-kubectl describe deployment openemr -n openemr     # Deployment status
-kubectl logs -f deployment/openemr -n openemr      # Application logs
+kubectl describe deployment openemr -n openemr            # Deployment status
+kubectl logs -f deployment/openemr -n openemr             # Application logs
 kubectl get events -n openemr --sort-by='.lastTimestamp'  # Recent events
 
 # Storage debugging
@@ -1425,16 +1425,16 @@ kubectl get storageclass                           # Available storage
 
 # Security debugging
 kubectl auth can-i --list --as=system:serviceaccount:openemr:openemr-sa  # Permissions
-kubectl get rolebindings -n openemr                # RBAC bindings
+kubectl get rolebindings -n openemr                                      # RBAC bindings
 
 # Network policy debugging
-kubectl get networkpolicies -n openemr             # Network policies
+kubectl get networkpolicies -n openemr                         # Network policies
 kubectl describe networkpolicy openemr-base-access -n openemr  # Policy details
 
 # WAF debugging
 kubectl get ingress -n openemr -o yaml | grep wafv2-acl-arn  # WAF association
-terraform output waf_enabled                              # WAF deployment status
-terraform output waf_web_acl_arn                          # WAF ACL ARN
+terraform output waf_enabled                                 # WAF deployment status
+terraform output waf_web_acl_arn                             # WAF ACL ARN
 ```
 
 ### **🔄 Resilient Deployment Architecture**
@@ -1961,7 +1961,7 @@ pre-commit install --hook-type commit-msg
 **Available Hooks:**
 
 - Code formatting (Black, isort, flake8)
-- Security scanning (Bandit, Checkov)
+- Security scanning (Trivy)
 - Validation (YAML with relaxed rules via `.yamllint`, JSON, Terraform, Kubernetes)
 - Documentation (Markdown linting with relaxed rules via `.markdownlint.json`)
 - Shell scripts (ShellCheck)
