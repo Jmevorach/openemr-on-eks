@@ -1978,6 +1978,11 @@ cleanup_final() {
     log_info "Destroying infrastructure..."
     terraform destroy -auto-approve -var="cluster_name=$CLUSTER_NAME" -var="aws_region=$AWS_REGION"
 
+    # Clean up Terraform state files to ensure fresh random IDs on next run
+    log_info "Cleaning up Terraform state files..."
+    rm -f terraform.tfstate* .terraform.lock.hcl
+    log_info "Terraform state files cleaned up - random IDs will regenerate on next run"
+
     # Clean up backup bucket if it exists
     if [ -n "$BACKUP_BUCKET" ]; then
         log_info "Cleaning up backup bucket: $BACKUP_BUCKET"

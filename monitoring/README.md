@@ -75,16 +75,24 @@ See pricing documentation for EBS [here](https://aws.amazon.com/ebs/pricing/).
 
 ```yaml
 # Two-layer autoscaling architecture
-Layer 1: Pod-level (HPA)
-├── Grafana: 1-3 replicas (CPU 70%, Memory 80%)
-├── Loki: 1-3 replicas (CPU 70%, Memory 80%)
-├── Jaeger: 1-3 replicas (CPU 70%, Memory 80%)
-└── AlertManager: 1-3 replicas (CPU 70%, Memory 80%)
+Layer 1: Pod-level (HPA) - Fully Configurable
+├── Grafana: 1-3 replicas (CPU 70%, Memory 80%) [Configurable]
+├── Prometheus: 1-3 replicas (CPU 70%, Memory 80%) [Configurable]
+├── Loki: 1-3 replicas (CPU 70%, Memory 80%) [Configurable]
+├── Jaeger: 1-3 replicas (CPU 70%, Memory 80%) [Configurable]
+└── AlertManager: 1-3 replicas (CPU 70%, Memory 80%) [Configurable]
 
 Layer 2: Node-level (EKS Auto Mode)
 ├── Automatic EC2 provisioning when pods pending
 ├── 12% management fee on EC2 costs
 └── 21-day node rotation for security
+
+# Configuration via environment variables:
+# ENABLE_AUTOSCALING="1"              # Enable/disable autoscaling
+# GRAFANA_MIN_REPLICAS="1"            # Min replicas per component
+# GRAFANA_MAX_REPLICAS="3"            # Max replicas per component
+# HPA_CPU_TARGET="70"                 # CPU target percentage
+# HPA_MEMORY_TARGET="80"              # Memory target percentage
 ```
 
 ## 📋 Prerequisites
@@ -207,6 +215,81 @@ export LOKI_RETENTION="360h"       # Default: 720h
 
 See complete reference in this project at [monitoring/openemr-monitoring.conf.example](./openemr-monitoring.conf.example)
 
+### Autoscaling Configuration
+
+The monitoring stack includes comprehensive autoscaling capabilities that can be customized for your environment:
+
+#### Basic Autoscaling Settings
+
+```bash
+# Enable/disable autoscaling (default: enabled)
+export ENABLE_AUTOSCALING="1"
+
+# CPU and Memory targets for scaling decisions
+export HPA_CPU_TARGET="70"        # CPU usage percentage (default: 70%)
+export HPA_MEMORY_TARGET="80"     # Memory usage percentage (default: 80%)
+```
+
+#### Component-Specific Replica Limits
+
+```bash
+# Grafana autoscaling
+export GRAFANA_MIN_REPLICAS="1"   # Minimum replicas (default: 1)
+export GRAFANA_MAX_REPLICAS="3"   # Maximum replicas (default: 3)
+
+# Prometheus autoscaling
+export PROMETHEUS_MIN_REPLICAS="1"   # Minimum replicas (default: 1)
+export PROMETHEUS_MAX_REPLICAS="3"   # Maximum replicas (default: 3)
+
+# Loki autoscaling
+export LOKI_MIN_REPLICAS="1"      # Minimum replicas (default: 1)
+export LOKI_MAX_REPLICAS="3"      # Maximum replicas (default: 3)
+
+# AlertManager autoscaling (when Slack alerts enabled)
+export ALERTMANAGER_MIN_REPLICAS="1"   # Minimum replicas (default: 1)
+export ALERTMANAGER_MAX_REPLICAS="3"   # Maximum replicas (default: 3)
+
+# Jaeger autoscaling
+export JAEGER_MIN_REPLICAS="1"    # Minimum replicas (default: 1)
+export JAEGER_MAX_REPLICAS="3"    # Maximum replicas (default: 3)
+```
+
+#### Example Configurations
+
+**High Availability Setup:**
+```bash
+export GRAFANA_MIN_REPLICAS="2"
+export PROMETHEUS_MIN_REPLICAS="2"
+export LOKI_MIN_REPLICAS="2"
+export ALERTMANAGER_MIN_REPLICAS="2"
+export JAEGER_MIN_REPLICAS="2"
+```
+
+**Cost-Optimized Setup:**
+```bash
+export GRAFANA_MAX_REPLICAS="2"
+export PROMETHEUS_MAX_REPLICAS="2"
+export LOKI_MAX_REPLICAS="2"
+export ALERTMANAGER_MAX_REPLICAS="2"
+export JAEGER_MAX_REPLICAS="2"
+export HPA_CPU_TARGET="80"        # Higher threshold = less scaling
+```
+
+**High Performance Setup:**
+```bash
+export GRAFANA_MAX_REPLICAS="5"
+export PROMETHEUS_MAX_REPLICAS="3"
+export LOKI_MAX_REPLICAS="4"
+export ALERTMANAGER_MAX_REPLICAS="3"
+export JAEGER_MAX_REPLICAS="4"
+export HPA_CPU_TARGET="60"        # Lower threshold = more scaling
+```
+
+**Disable Autoscaling:**
+```bash
+export ENABLE_AUTOSCALING="0"     # All components run with minimum replicas
+```
+
 ## 🌐 Access Methods
 
 ### Method 1: Port-Forward (Development)
@@ -309,8 +392,13 @@ kubectl port-forward -n monitoring svc/prometheus-stack-kube-prom-alertmanager 9
 ### Weekly Tasks
 
 ```bash
-# Review autoscaling events
+# Review autoscaling events and HPA status
 kubectl get events -n monitoring --field-selector reason=ScalingReplicaSet
+kubectl get hpa -n monitoring
+kubectl describe hpa -n monitoring
+
+# Check current replica counts
+kubectl get pods -n monitoring -o wide
 
 # Check storage usage
 kubectl exec -n monitoring prometheus-prometheus-stack-kube-prom-prometheus-0 -- \
@@ -318,6 +406,15 @@ kubectl exec -n monitoring prometheus-prometheus-stack-kube-prom-prometheus-0 --
 
 # Review Grafana dashboards usage
 # Check which dashboards are most/least used
+
+# Monitor autoscaling behavior
+kubectl get hpa -n monitoring -o custom-columns=\
+NAME:.metadata.name,\
+REFERENCE:.spec.scaleTargetRef.name,\
+TARGETS:.status.currentCPUUtilizationPercentage,\
+MINPODS:.spec.minReplicas,\
+MAXPODS:.spec.maxReplicas,\
+REPLICAS:.status.currentReplicas
 ```
 
 ### Monthly Tasks

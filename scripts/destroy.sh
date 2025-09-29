@@ -370,6 +370,11 @@ terraform_destroy() {
         log_warning "Terraform destroy failed, but continuing with manual cleanup"
     }
     
+    # Clean up Terraform state files to ensure fresh random IDs on next run
+    log_info "Cleaning up Terraform state files..."
+    rm -f terraform.tfstate* .terraform.lock.hcl
+    log_info "Terraform state files cleaned up - random IDs will regenerate on next run"
+    
     log_success "Terraform destroy completed"
 }
 

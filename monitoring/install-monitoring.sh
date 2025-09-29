@@ -57,6 +57,21 @@ readonly BASIC_AUTH_PASSWORD="${BASIC_AUTH_PASSWORD:-}"
 readonly SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 readonly SLACK_CHANNEL="${SLACK_CHANNEL:-}"
 
+# Autoscaling Configuration
+readonly ENABLE_AUTOSCALING="${ENABLE_AUTOSCALING:-1}"
+readonly GRAFANA_MIN_REPLICAS="${GRAFANA_MIN_REPLICAS:-1}"
+readonly GRAFANA_MAX_REPLICAS="${GRAFANA_MAX_REPLICAS:-3}"
+readonly PROMETHEUS_MIN_REPLICAS="${PROMETHEUS_MIN_REPLICAS:-1}"
+readonly PROMETHEUS_MAX_REPLICAS="${PROMETHEUS_MAX_REPLICAS:-3}"
+readonly LOKI_MIN_REPLICAS="${LOKI_MIN_REPLICAS:-1}"
+readonly LOKI_MAX_REPLICAS="${LOKI_MAX_REPLICAS:-3}"
+readonly ALERTMANAGER_MIN_REPLICAS="${ALERTMANAGER_MIN_REPLICAS:-1}"
+readonly ALERTMANAGER_MAX_REPLICAS="${ALERTMANAGER_MAX_REPLICAS:-3}"
+readonly JAEGER_MIN_REPLICAS="${JAEGER_MIN_REPLICAS:-1}"
+readonly JAEGER_MAX_REPLICAS="${JAEGER_MAX_REPLICAS:-3}"
+readonly HPA_CPU_TARGET="${HPA_CPU_TARGET:-70}"
+readonly HPA_MEMORY_TARGET="${HPA_MEMORY_TARGET:-80}"
+
 # ---- cert-manager (pinned) & optional Grafana TLS via cert-manager
 readonly CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.18.2}"
 readonly USE_CERT_MANAGER_TLS="${USE_CERT_MANAGER_TLS:-0}"
@@ -134,6 +149,51 @@ validate_inputs(){
   if [[ "$USE_CERT_MANAGER_TLS" == "1" && -z "$CERT_MANAGER_ISSUER_NAME" ]]; then
     log_error "USE_CERT_MANAGER_TLS=1 requires CERT_MANAGER_ISSUER_NAME (and optionally CERT_MANAGER_ISSUER_KIND/GROUP)."; return 1
   fi
+
+  # Validate autoscaling configuration
+  if [[ "$ENABLE_AUTOSCALING" == "1" ]]; then
+    local components=("GRAFANA" "PROMETHEUS" "LOKI" "ALERTMANAGER" "JAEGER")
+    for comp in "${components[@]}"; do
+      local min_var="${comp}_MIN_REPLICAS"
+      local max_var="${comp}_MAX_REPLICAS"
+      local min_val="${!min_var}"
+      local max_val="${!max_var}"
+      
+      if ! [[ "$min_val" =~ ^[0-9]+$ && "$max_val" =~ ^[0-9]+$ ]]; then
+        log_error "Invalid replica values for $comp: min=$min_val, max=$max_val (must be positive integers)"
+        return 1
+      fi
+      
+      if [[ "$min_val" -lt 1 || "$max_val" -lt 1 ]]; then
+        log_error "Invalid replica values for $comp: min=$min_val, max=$max_val (must be >= 1)"
+        return 1
+      fi
+      
+      if [[ "$min_val" -gt "$max_val" ]]; then
+        log_error "Invalid replica values for $comp: min=$min_val > max=$max_val"
+        return 1
+      fi
+      
+      if [[ "$max_val" -gt 10 ]]; then
+        log_warn "High max replicas for $comp: $max_val (consider cost implications)"
+      fi
+    done
+    
+    # Validate HPA targets
+    if ! [[ "$HPA_CPU_TARGET" =~ ^[0-9]+$ && "$HPA_MEMORY_TARGET" =~ ^[0-9]+$ ]]; then
+      log_error "Invalid HPA targets: CPU=$HPA_CPU_TARGET, Memory=$HPA_MEMORY_TARGET (must be positive integers)"
+      return 1
+    fi
+    
+    if [[ "$HPA_CPU_TARGET" -lt 10 || "$HPA_CPU_TARGET" -gt 90 ]]; then
+      log_warn "Unusual CPU target: $HPA_CPU_TARGET% (recommended: 50-80%)"
+    fi
+    
+    if [[ "$HPA_MEMORY_TARGET" -lt 10 || "$HPA_MEMORY_TARGET" -gt 90 ]]; then
+      log_warn "Unusual memory target: $HPA_MEMORY_TARGET% (recommended: 60-85%)"
+    fi
+  fi
+  
   log_success "Configuration validation passed"
 }
 
@@ -514,6 +574,22 @@ grafana:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 1000m, memory: 1Gi }
+EOF
+
+  # Add autoscaling configuration for Grafana if enabled
+  if [[ "$ENABLE_AUTOSCALING" == "1" ]]; then
+    cat >> "$VALUES_FILE" <<EOF
+
+  autoscaling:
+    enabled: true
+    minReplicas: ${GRAFANA_MIN_REPLICAS}
+    maxReplicas: ${GRAFANA_MAX_REPLICAS}
+    targetCPUUtilizationPercentage: ${HPA_CPU_TARGET}
+    targetMemoryUtilizationPercentage: ${HPA_MEMORY_TARGET}
+EOF
+  fi
+
+  cat >> "$VALUES_FILE" <<EOF
 
   sidecar:
     dashboards:
@@ -564,7 +640,7 @@ prometheus:
       requests: { cpu: 500m, memory: 2Gi }
       limits:   { cpu: 2000m, memory: 4Gi }
 
-    replicas: 1
+    replicas: ${PROMETHEUS_MIN_REPLICAS}
     retention: 30d
     retentionSize: 90GB
 
@@ -577,6 +653,24 @@ prometheus:
     remoteWrite: []
     evaluationInterval: 30s
     scrapeInterval: 30s
+EOF
+
+  # Add autoscaling configuration for Prometheus if enabled
+  if [[ "$ENABLE_AUTOSCALING" == "1" ]]; then
+    cat >> "$VALUES_FILE" <<EOF
+
+  prometheus:
+    prometheusSpec:
+      autoscaling:
+        enabled: true
+        minReplicas: ${PROMETHEUS_MIN_REPLICAS}
+        maxReplicas: ${PROMETHEUS_MAX_REPLICAS}
+        targetCPUUtilizationPercentage: ${HPA_CPU_TARGET}
+        targetMemoryUtilizationPercentage: ${HPA_MEMORY_TARGET}
+EOF
+  fi
+
+  cat >> "$VALUES_FILE" <<EOF
 
 ${AM_BLOCK}
 
@@ -792,11 +886,11 @@ install_loki_stack(){
       --set singleBinary.resources.requests.memory=512Mi \
       --set singleBinary.resources.limits.cpu=1000m \
       --set singleBinary.resources.limits.memory=1Gi \
-      --set singleBinary.autoscaling.enabled=true \
-      --set singleBinary.autoscaling.minReplicas=1 \
-      --set singleBinary.autoscaling.maxReplicas=3 \
-      --set singleBinary.autoscaling.targetCPUUtilizationPercentage=70 \
-      --set singleBinary.autoscaling.targetMemoryUtilizationPercentage=80 \
+      --set singleBinary.autoscaling.enabled=$ENABLE_AUTOSCALING \
+      --set singleBinary.autoscaling.minReplicas=$LOKI_MIN_REPLICAS \
+      --set singleBinary.autoscaling.maxReplicas=$LOKI_MAX_REPLICAS \
+      --set singleBinary.autoscaling.targetCPUUtilizationPercentage=$HPA_CPU_TARGET \
+      --set singleBinary.autoscaling.targetMemoryUtilizationPercentage=$HPA_MEMORY_TARGET \
       --set loki.limits_config.retention_period=720h \
       --set loki.compactor.retention_enabled=false \
       --set write.replicas=0 --set read.replicas=0 --set backend.replicas=0 \
@@ -841,7 +935,12 @@ install_loki_stack(){
 }
 
 create_additional_hpa(){
-  log_step "Creating additional HPA resources (optional)..."
+  if [[ "$ENABLE_AUTOSCALING" != "1" ]]; then
+    log_info "Autoscaling disabled - skipping additional HPA resources"
+    return 0
+  fi
+  
+  log_step "Creating additional HPA resources..."
   if alertmanager_enabled; then
     kubectl apply -f - <<EOF
 apiVersion: autoscaling/v2
@@ -854,15 +953,15 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: alertmanager-prometheus-stack-kube-prom-alertmanager
-  minReplicas: 1
-  maxReplicas: 3
+  minReplicas: ${ALERTMANAGER_MIN_REPLICAS}
+  maxReplicas: ${ALERTMANAGER_MAX_REPLICAS}
   metrics:
   - type: Resource
-    resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+    resource: { name: cpu, target: { type: Utilization, averageUtilization: ${HPA_CPU_TARGET} } }
   - type: Resource
-    resource: { name: memory, target: { type: Utilization, averageUtilization: 80 } }
+    resource: { name: memory, target: { type: Utilization, averageUtilization: ${HPA_MEMORY_TARGET} } }
 EOF
-    log_info "✅ AlertManager HPA created"
+    log_info "✅ AlertManager HPA created (${ALERTMANAGER_MIN_REPLICAS}-${ALERTMANAGER_MAX_REPLICAS} replicas)"
   fi
   log_success "Additional HPA resources done"; log_audit "CREATE" "hpa_resources" "SUCCESS"
 }
@@ -937,8 +1036,9 @@ EOF
   log_info "Waiting for Jaeger deployment to be ready..."
   kubectl wait --for=condition=available --timeout="$TIMEOUT_KUBECTL" deployment/jaeger -n "$MONITORING_NAMESPACE" || true
 
-  # Optional HPA
-  kubectl apply -f - <<EOF
+  # Optional HPA (only if autoscaling enabled)
+  if [[ "$ENABLE_AUTOSCALING" == "1" ]]; then
+    kubectl apply -f - <<EOF
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -952,14 +1052,16 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: jaeger
-  minReplicas: 1
-  maxReplicas: 3
+  minReplicas: ${JAEGER_MIN_REPLICAS}
+  maxReplicas: ${JAEGER_MAX_REPLICAS}
   metrics:
   - type: Resource
-    resource: { name: cpu,    target: { type: Utilization, averageUtilization: 70 } }
+    resource: { name: cpu,    target: { type: Utilization, averageUtilization: ${HPA_CPU_TARGET} } }
   - type: Resource
-    resource: { name: memory, target: { type: Utilization, averageUtilization: 80 } }
+    resource: { name: memory, target: { type: Utilization, averageUtilization: ${HPA_MEMORY_TARGET} } }
 EOF
+    log_info "✅ Jaeger HPA created (${JAEGER_MIN_REPLICAS}-${JAEGER_MAX_REPLICAS} replicas)"
+  fi
 
   log_success "Jaeger installed with cert-manager-backed webhooks"; log_audit "INSTALL" "jaeger" "SUCCESS"
 }
