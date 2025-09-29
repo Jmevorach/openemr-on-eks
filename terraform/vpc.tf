@@ -16,8 +16,8 @@ module "vpc" {
   cidr = var.vpc_cidr               # Main IP address range (default: 10.0.0.0/16)
 
   # Availability zones and subnet configuration
-  # Use first 3 availability zones for high availability
-  azs             = slice(data.aws_availability_zones.available.names, 0, 3)
+  # Dynamically select availability zones (adapts to regions with fewer AZs)
+  azs             = slice(data.aws_availability_zones.available.names, 0, min(3, length(data.aws_availability_zones.available.names)))
   private_subnets = var.private_subnets  # Private subnets for worker nodes and databases
   public_subnets  = var.public_subnets   # Public subnets for load balancers and NAT gateways
 
