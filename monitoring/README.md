@@ -71,6 +71,31 @@ graph TB
 
 See pricing documentation for EBS [here](https://aws.amazon.com/ebs/pricing/).
 
+### Unified Observability: Logs, Metrics, and Traces
+
+This monitoring stack provides **full correlation** between logs, metrics, and traces, enabling faster root-cause analysis and long-term compliance.
+
+```mermaid
+graph LR
+    subgraph "Correlation Features"
+        LOGS[Logs in Loki] -->|Trace ID| TRACES[Traces in Jaeger]
+        TRACES -->|View Logs| LOGS
+        TRACES -->|RED Metrics| METRICS[Metrics in Prometheus]
+        METRICS -->|Exemplars| TRACES
+        LOGS -.->|Labels| METRICS
+    end
+    
+    subgraph "Data Sources"
+        LOKI[(Loki: Log Aggregation)]
+        JAEGER[(Jaeger: Distributed Tracing)]
+        PROM[(Prometheus: Metrics)]
+    end
+    
+    LOGS --> LOKI
+    TRACES --> JAEGER
+    METRICS --> PROM
+```
+
 ### Autoscaling with EKS Auto Mode
 
 ```yaml
@@ -350,6 +375,18 @@ After installation, these dashboards are automatically available:
 2. Set namespace filter to "openemr"
 3. View all OpenEMR pod metrics
 ```
+
+#### 📚 Data Source Reference
+
+Your Grafana has these data sources pre-configured:
+
+| Data Source | Purpose |
+|-------------|---------|
+| **Prometheus** | Metrics (CPU, memory, requests) |
+| **Loki** | Logs (application, system) |
+| **Jaeger** | Distributed traces |
+| **CloudWatch** | Compliance logs (long-term) |
+| **AlertManager** | Alert management |
 
 ## 🔒 Security & Compliance
 

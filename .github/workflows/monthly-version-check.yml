@@ -456,7 +456,7 @@ jobs:
 
       # Step 11: Create GitHub issue for update awareness (if enabled)
       - name: Create GitHub Issue
-        if: always() && github.event.inputs.create_issue == 'true'
+        if: always() && (github.event_name == 'schedule' || github.event.inputs.create_issue == 'true')
         uses: actions/github-script@v7
         with:
           script: |

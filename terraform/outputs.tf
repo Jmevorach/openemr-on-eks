@@ -143,6 +143,11 @@ output "openemr_role_arn" {
   value       = aws_iam_role.openemr.arn
 }
 
+output "grafana_cloudwatch_role_arn" {
+  description = "ARN of the Grafana IAM role for CloudWatch datasource access"
+  value       = aws_iam_role.grafana_cloudwatch.arn
+}
+
 # CloudWatch Logging Outputs
 # These outputs expose key information about the CloudWatch log groups that collect
 # and store logs from OpenEMR and Fluent Bit, enabling centralized log management

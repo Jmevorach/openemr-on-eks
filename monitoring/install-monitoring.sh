@@ -31,8 +31,8 @@ readonly VALUES_FILE="${VALUES_FILE:-${SCRIPT_DIR}/prometheus-values.yaml}"
 readonly LOG_FILE="${LOG_FILE:-${SCRIPT_DIR}/openemr-monitoring.log}"
 
 # Chart versions (pin to known-good)
-readonly CHART_KPS_VERSION="${CHART_KPS_VERSION:-77.11.0}"
-readonly CHART_LOKI_VERSION="${CHART_LOKI_VERSION:-6.41.0}"
+readonly CHART_KPS_VERSION="${CHART_KPS_VERSION:-77.12.0}"
+readonly CHART_LOKI_VERSION="${CHART_LOKI_VERSION:-6.41.1}"
 readonly CHART_JAEGER_VERSION="${CHART_JAEGER_VERSION:-3.4.1}"
 
 # Timeouts / retries
@@ -56,6 +56,60 @@ readonly BASIC_AUTH_PASSWORD="${BASIC_AUTH_PASSWORD:-}"
 # Alertmanager Slack (optional)
 readonly SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 readonly SLACK_CHANNEL="${SLACK_CHANNEL:-}"
+
+# AWS Configuration
+# Detect AWS region from EKS cluster or environment variable
+get_aws_region() {
+  # Try to get region from AWS_REGION or AWS_DEFAULT_REGION environment variables
+  if [[ -n "${AWS_REGION:-}" ]]; then
+    echo "${AWS_REGION}"
+    return 0
+  fi
+  if [[ -n "${AWS_DEFAULT_REGION:-}" ]]; then
+    echo "${AWS_DEFAULT_REGION}"
+    return 0
+  fi
+  
+  # Try to get region from kubectl cluster info
+  local cluster_endpoint
+  cluster_endpoint=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "")
+  if [[ -n "$cluster_endpoint" && "$cluster_endpoint" =~ eks\.([a-z0-9-]+)\.amazonaws\.com ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  
+  # Try to get from EC2 metadata (if running on EC2)
+  if command -v curl >/dev/null 2>&1; then
+    local region
+    region=$(curl -s --max-time 2 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "")
+    if [[ -n "$region" ]]; then
+      echo "$region"
+      return 0
+    fi
+  fi
+  
+  # Default to us-west-2 if all else fails
+  echo "us-west-2"
+}
+
+readonly AWS_REGION=$(get_aws_region)
+
+# Cluster name detection
+get_cluster_name() {
+  # Try to get from kubectl context
+  local cluster_name
+  cluster_name=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null | sed 's|.*/||' 2>/dev/null)
+  
+  if [[ -n "$cluster_name" && "$cluster_name" != "null" ]]; then
+    echo "$cluster_name"
+    return 0
+  fi
+  
+  # Default fallback
+  echo "openemr-eks"
+}
+
+readonly CLUSTER_NAME="${CLUSTER_NAME:-$(get_cluster_name)}"
 
 # Autoscaling Configuration
 readonly ENABLE_AUTOSCALING="${ENABLE_AUTOSCALING:-1}"
@@ -439,8 +493,8 @@ Grafana Admin Password: $p
 # Grafana:   kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-grafana 3000:80
 # Prometheus: kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090
 # AlertManager: kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-kube-prom-alertmanager 9093:9093
-# Loki:       kubectl -n $MONITORING_NAMESPACE port-forward svc/loki 3100:3100
-# Jaeger:     kubectl -n $MONITORING_NAMESPACE port-forward svc/jaeger-query 16686:16686
+# Loki:       kubectl -n $MONITORING_NAMESPACE port-forward svc/loki-gateway 3100:80
+# Jaeger:     kubectl -n $MONITORING_NAMESPACE port-forward svc/jaeger-query 16687:16687
 
 # Security Note: keep this file secure and delete when no longer needed.
 EOF
@@ -559,7 +613,7 @@ grafana:
     existingSecret: "grafana-admin-secret"
     userKey: admin-user
     passwordKey: admin-password
-
+  
   persistence:
     enabled: true
     storageClassName: ${sc_prom}
@@ -611,6 +665,8 @@ EOF
       serve_from_sub_path: false
     security:
       admin_user: admin
+    tracing:
+      enabled: false
       disable_gravatar: true
       cookie_secure: true
       cookie_samesite: strict
@@ -621,6 +677,10 @@ EOF
       level: info
     unified_alerting:
       enabled: true
+    tracing:
+      enabled: true
+      jaeger:
+        address: "jaeger-agent.monitoring.svc.cluster.local:6831"
 
 prometheus:
   prometheusSpec:
@@ -971,99 +1031,105 @@ EOF
 # ------------------------------
 install_jaeger(){
   log_step "Installing Jaeger for distributed tracing..."
-  ensure_namespace "$OBSERVABILITY_NAMESPACE"
+  ensure_namespace "$MONITORING_NAMESPACE"
 
-  # ✅ cert-manager is required for the operator's webhook certs
-  install_cert_manager
-
-  log_info "Installing Jaeger Operator (v1.65.0; unmodified)..."
-  local url="https://github.com/jaegertracing/jaeger-operator/releases/download/v1.65.0/jaeger-operator.yaml"
-  if ! curl --fail --connect-timeout 10 --max-time 60 -L "$url" | kubectl apply -f -; then
-    log_warn "Failed to apply Jaeger Operator manifest"; return 1
+  log_info "Adding Jaeger Helm repository..."
+  if ! helm repo list | grep -q jaegertracing; then
+    helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
   fi
+  helm repo update
 
-  # Detect operator namespace (varies by manifest)
-  local JAEGER_OPERATOR_NS
-  JAEGER_OPERATOR_NS="$(kubectl get deploy -A -o jsonpath='{range .items[?(@.metadata.name=="jaeger-operator")]}{.metadata.namespace}{"\n"}{end}' | head -n1)"
-  if [[ -z "$JAEGER_OPERATOR_NS" ]]; then
-    log_warn "Could not detect jaeger-operator namespace automatically; defaulting to ${OBSERVABILITY_NAMESPACE}"
-    JAEGER_OPERATOR_NS="$OBSERVABILITY_NAMESPACE"
-  fi
-  log_info "jaeger-operator detected in namespace: ${JAEGER_OPERATOR_NS}"
+  log_info "Installing Jaeger using Helm chart (version: ${CHART_JAEGER_VERSION})..."
+  
+  # Create Jaeger values for Helm installation
+  local JAEGER_VALUES_FILE="${SCRIPT_DIR}/jaeger-values.yaml"
+  cat > "$JAEGER_VALUES_FILE" <<EOF
+# Jaeger Configuration
+allInOne:
+  enabled: false
 
-  log_info "Waiting for Jaeger Operator deployment..."
-  if ! kubectl wait --for=condition=available --timeout="$TIMEOUT_KUBECTL" deployment/jaeger-operator -n "$JAEGER_OPERATOR_NS"; then
-    log_warn "Jaeger Operator not ready"; return 1
-  fi
+agent:
+  enabled: true
+  replicaCount: ${JAEGER_MIN_REPLICAS}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-  # Give reconciler time to issue webhook certs via cert-manager (best-effort)
-  log_info "Checking for webhook cert Secret..."
-  kubectl -n "$JAEGER_OPERATOR_NS" get secret -l app.kubernetes.io/name=jaeger-operator -o name >/dev/null 2>&1 || true
+collector:
+  enabled: true
+  replicaCount: ${JAEGER_MIN_REPLICAS}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
 
-  log_info "Creating Jaeger all-in-one instance..."
-  kubectl apply -f - <<EOF
-apiVersion: jaegertracing.io/v1
-kind: Jaeger
-metadata:
-  name: jaeger
-  namespace: ${MONITORING_NAMESPACE}
-  labels:
-    app.kubernetes.io/name: jaeger
-    app.kubernetes.io/component: tracing
-spec:
-  strategy: allInOne
-  storage:
-    type: memory
-    options:
-      memory:
-        max-traces: 100000
-  allInOne:
-    image: jaegertracing/all-in-one:1.72.0
-    options:
-      log-level: info
-      memory.max-traces: 100000
-    resources:
-      requests: { cpu: 200m, memory: 512Mi }
-      limits:   { cpu: 1000m, memory: 1Gi }
-  ingress:
-    enabled: false
-  ui:
-    options:
-      dependencies: { menuEnabled: true }
-      archiveEnabled: true
+query:
+  enabled: true
+  replicaCount: ${JAEGER_MIN_REPLICAS}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+storage:
+  type: memory
+  options:
+    memory:
+      max-traces: 100000
+
+service:
+  type: ClusterIP
+  query:
+    type: ClusterIP
+    port: 16686
+
+ingress:
+  enabled: false
 EOF
 
-  log_info "Waiting for Jaeger deployment to be ready..."
-  kubectl wait --for=condition=available --timeout="$TIMEOUT_KUBECTL" deployment/jaeger -n "$MONITORING_NAMESPACE" || true
-
-  # Optional HPA (only if autoscaling enabled)
+  # Add autoscaling configuration if enabled
   if [[ "$ENABLE_AUTOSCALING" == "1" ]]; then
-    kubectl apply -f - <<EOF
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: jaeger-hpa
-  namespace: ${MONITORING_NAMESPACE}
-  labels:
-    app.kubernetes.io/name: jaeger
-    app.kubernetes.io/component: tracing
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: jaeger
+    cat >> "$JAEGER_VALUES_FILE" <<EOF
+
+# Autoscaling Configuration
+autoscaling:
+  enabled: true
   minReplicas: ${JAEGER_MIN_REPLICAS}
   maxReplicas: ${JAEGER_MAX_REPLICAS}
-  metrics:
-  - type: Resource
-    resource: { name: cpu,    target: { type: Utilization, averageUtilization: ${HPA_CPU_TARGET} } }
-  - type: Resource
-    resource: { name: memory, target: { type: Utilization, averageUtilization: ${HPA_MEMORY_TARGET} } }
+  targetCPUUtilizationPercentage: ${HPA_CPU_TARGET}
+  targetMemoryUtilizationPercentage: ${HPA_MEMORY_TARGET}
 EOF
-    log_info "✅ Jaeger HPA created (${JAEGER_MIN_REPLICAS}-${JAEGER_MAX_REPLICAS} replicas)"
   fi
 
-  log_success "Jaeger installed with cert-manager-backed webhooks"; log_audit "INSTALL" "jaeger" "SUCCESS"
+  # Install Jaeger using Helm
+  if ! helm upgrade --install jaeger jaegertracing/jaeger \
+    --namespace "$MONITORING_NAMESPACE" \
+    --version "$CHART_JAEGER_VERSION" \
+    --values "$JAEGER_VALUES_FILE" \
+    --wait \
+    --timeout "$TIMEOUT_HELM"; then
+    log_error "Failed to install Jaeger Helm chart"; return 1
+  fi
+
+  log_info "Waiting for Jaeger pods to be ready..."
+  if ! kubectl wait --for=condition=available --timeout="$TIMEOUT_KUBECTL" deployment -l app.kubernetes.io/instance=jaeger -n "$MONITORING_NAMESPACE"; then
+    log_warn "Some Jaeger components may not be ready"; return 1
+  fi
+
+  # Clean up temporary values file
+  rm -f "$JAEGER_VALUES_FILE"
+
+  log_success "Jaeger Helm chart installed and ready"; log_audit "INSTALL" "jaeger" "SUCCESS"
 }
 
 # ------------------------------
@@ -1087,7 +1153,7 @@ verify_installation(){
     return 1
   fi
   
-  local checks=("prometheus:prometheus-stack-kube-prom-prometheus:9090" "grafana:prometheus-stack-grafana:80" "alertmanager:prometheus-stack-kube-prom-alertmanager:9093" "loki:loki:3100" "jaeger:jaeger-query:16686")
+  local checks=("prometheus:prometheus-stack-kube-prom-prometheus:9090" "grafana:prometheus-stack-grafana:80" "alertmanager:prometheus-stack-kube-prom-alertmanager:9093" "loki:loki:3100" "jaeger:jaeger-query:16687")
   local failed=0
   for c in "${checks[@]}"; do IFS=':' read -r name svc _ <<<"$c"; log_info "Checking $name service..."
     if kubectl get service "$svc" -n "$MONITORING_NAMESPACE" >/dev/null 2>&1; then
@@ -1146,7 +1212,9 @@ print_access_help(){
   if [[ -f "$f" ]]; then local pw; pw="$(grep "Grafana Admin Password:" "$f" | awk '{print $4}' || echo "check-credentials-file")"; log_info "📋 Grafana Credentials:"; log_info "   Username: admin"; log_info "   Password: $pw"; log_info ""; fi
   log_info "🔗 Port-forward Commands:"; log_info "   Grafana:    kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-grafana 3000:80"
   log_info "   Prometheus: kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090"
-  log_info "   Loki:       kubectl -n $MONITORING_NAMESPACE port-forward svc/loki 3100:3100"
+  log_info "   AlertManager: kubectl -n $MONITORING_NAMESPACE port-forward svc/prometheus-stack-kube-prom-alertmanager 9093:9093"
+  log_info "   Loki:       kubectl -n $MONITORING_NAMESPACE port-forward svc/loki-gateway 3100:80"
+  log_info "   Jaeger:     kubectl -n $MONITORING_NAMESPACE port-forward svc/jaeger-query 16687:16687"
   log_info ""; log_info "🌐 Access URLs (after port-forwarding):"; log_info "   Grafana:    http://localhost:3000"; log_info "   Prometheus: http://localhost:9090"; log_info "   Loki:       http://localhost:3100"; log_info ""
   log_info "📊 Next Steps:"; log_info "   1. Port-forward to Grafana and login"; log_info "   2. Dashboards → Browse"; log_info "   3. Kubernetes / Compute Resources / Namespace (Pods)"; log_info "   4. Filter namespace 'openemr'"; log_info ""
 }
@@ -1156,6 +1224,53 @@ print_troubleshooting_help(){
   log_info "2. Events:     kubectl get events -n $MONITORING_NAMESPACE --sort-by='.lastTimestamp' | tail -10"
   log_info "3. Grafana logs: kubectl logs deployment/prometheus-stack-grafana -n $MONITORING_NAMESPACE"
   log_info "4. Re-run with DEBUG=1"; log_info "5. Tail logs: tail -f $LOG_FILE"; log_info ""
+}
+
+# ------------------------------
+# CloudWatch IAM for Grafana
+# ------------------------------
+create_grafana_cloudwatch_iam(){
+  log_step "Setting up CloudWatch IAM permissions for Grafana..."
+  
+  # Get Grafana CloudWatch role ARN from Terraform outputs
+  local role_arn
+  local terraform_dir="${SCRIPT_DIR}/../terraform"
+  
+  if [[ -f "$terraform_dir/terraform.tfstate" ]] || [[ -n "${TERRAFORM_STATE_PATH:-}" ]]; then
+    log_info "Retrieving Grafana CloudWatch IAM role from Terraform..."
+    
+    # Try to get from Terraform output
+    role_arn=$(cd "$terraform_dir" && terraform output -raw grafana_cloudwatch_role_arn 2>/dev/null || echo "")
+    
+    if [[ -n "$role_arn" && "$role_arn" != "null" ]]; then
+      log_success "Found Terraform-managed IAM role: $role_arn"
+    else
+      log_warn "Could not retrieve grafana_cloudwatch_role_arn from Terraform"
+      log_warn "CloudWatch datasource will not work without IAM permissions"
+      log_warn "Please ensure Terraform has been applied with the latest IAM resources"
+      return 0
+    fi
+  else
+    log_warn "Terraform state not found at $terraform_dir"
+    log_warn "CloudWatch datasource requires Terraform-managed IAM role"
+    log_warn "Please run 'terraform apply' first to create the Grafana CloudWatch IAM role"
+    return 0
+  fi
+  
+  # Annotate Grafana service account with the Terraform-created role
+  log_info "Annotating Grafana service account with IAM role..."
+  
+  if kubectl annotate serviceaccount prometheus-stack-grafana \
+    -n "$MONITORING_NAMESPACE" \
+    eks.amazonaws.com/role-arn="$role_arn" \
+    --overwrite 2>/dev/null; then
+    log_success "Grafana service account annotated with CloudWatch IAM role"
+    log_info "Role ARN: $role_arn"
+    log_audit "CREATE" "grafana_cloudwatch_iam" "SUCCESS"
+  else
+    log_warn "Failed to annotate service account - CloudWatch datasource may not work"
+    log_warn "Ensure the prometheus-stack-grafana service account exists"
+  fi
 }
 
 # ------------------------------
@@ -1183,13 +1298,14 @@ data:
         orgId: 1
       - name: Jaeger
         orgId: 1
+      - name: CloudWatch
+        orgId: 1
     datasources:
       - name: Prometheus
         uid: prometheus
         type: prometheus
         access: proxy
         url: http://prometheus-stack-kube-prom-prometheus:9090
-        isDefault: true
         jsonData:
           timeInterval: "30s"
           queryTimeout: "300s"
@@ -1200,19 +1316,83 @@ data:
         uid: loki
         type: loki
         access: proxy
-        url: http://loki:3100
+        url: http://loki-gateway.monitoring.svc.cluster.local/
         jsonData:
+          timeout: 60
           maxLines: 5000
+          derivedFields:
+            # Link trace IDs from logs to Jaeger traces
+            - datasourceUid: jaeger
+              matcherRegex: 'traceID=(\\w+)'
+              name: TraceID
+              url: '\${__value.raw}'
+              urlDisplayLabel: 'View Trace in Jaeger'
+            # Alternative trace ID format (for different logging patterns)
+            - datasourceUid: jaeger
+              matcherRegex: 'trace_id[=:]\\s*([a-fA-F0-9]+)'
+              name: TraceID
+              url: '\${__value.raw}'
+              urlDisplayLabel: 'View Trace'
         editable: true
       - name: Jaeger
         uid: jaeger
         type: jaeger
         access: proxy
-        url: http://jaeger-query:16686
-        jsonData: {}
+        url: http://jaeger-query.monitoring.svc.cluster.local:16686
+        jsonData:
+          # Trace to Logs - Link from traces back to logs in Loki
+          tracesToLogsV2:
+            datasourceUid: 'loki'
+            spanStartTimeShift: '1h'
+            spanEndTimeShift: '-1h'
+            tags: ['job', 'instance', 'pod', 'namespace']
+            filterByTraceID: true
+            filterBySpanID: false
+            customQuery: false
+          # Trace to Metrics - Correlate traces with Prometheus metrics
+          tracesToMetrics:
+            datasourceUid: 'prometheus'
+            spanStartTimeShift: '1h'
+            spanEndTimeShift: '-1h'
+            tags:
+              - key: 'service.name'
+                value: 'service'
+              - key: 'job'
+            queries:
+              - name: 'Request Rate'
+                query: 'sum(rate(traces_spanmetrics_calls_total{\$__tags}[5m]))'
+              - name: 'Error Rate'
+                query: 'sum(rate(traces_spanmetrics_calls_total{\$__tags,status_code="STATUS_CODE_ERROR"}[5m]))'
+              - name: 'Duration'
+                query: 'histogram_quantile(0.9, sum(rate(traces_spanmetrics_latency_bucket{\$__tags}[5m])) by (le))'
+          # Node Graph - Visualize service dependencies
+          nodeGraph:
+            enabled: true
+          # Trace Query - Enable time shift for better context
+          traceQuery:
+            timeShiftEnabled: true
+            spanStartTimeShift: '1h'
+            spanEndTimeShift: '-1h'
+          # Span Bar - Configure span visualization
+          spanBar:
+            type: 'Tag'
+            tag: 'http.status_code'
+        editable: true
+      - name: CloudWatch
+        uid: cloudwatch
+        type: cloudwatch
+        access: proxy
+        jsonData:
+          authType: default
+          defaultRegion: ${AWS_REGION}
         editable: true
 EOF
   log_success "Grafana datasources created"; log_audit "CREATE" "grafana_datasources" "SUCCESS"
+  
+  # Grafana sidecar automatically reloads datasources from configmaps (no restart needed)
+  # This avoids ReadWriteOncePod volume contention issues during pod restarts
+  log_info "Datasources will be auto-discovered by Grafana sidecar within 60 seconds"
+  log_info "No pod restart required - sidecar watches for configmap changes"
 }
 
 # ------------------------------
@@ -1483,14 +1663,14 @@ EOF
 # ------------------------------
 # Utilities
 # ------------------------------
-print_access_help(){ log_info "Access the UIs with port-forward (if not using Ingress):"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-grafana 3000:80        # http://localhost:3000"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-kube-prom-alertmanager 9093:9093"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/loki 3100:3100"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/jaeger-query 16686:16686"; }
+print_access_help(){ log_info "Access the UIs with port-forward (if not using Ingress):"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-grafana 3000:80        # http://localhost:3000"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/prometheus-stack-kube-prom-alertmanager 9093:9093"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/loki-gateway 3100:80"; echo "  kubectl -n ${MONITORING_NAMESPACE} port-forward svc/jaeger-query 16687:16687"; }
 uninstall_all(){
   log_step "Uninstalling monitoring stack..."
   set +e
   kubectl delete ingress grafana -n "$MONITORING_NAMESPACE" --ignore-not-found
   helm uninstall prometheus-stack -n "$MONITORING_NAMESPACE"
   helm uninstall loki -n "$MONITORING_NAMESPACE"
-  kubectl delete jaeger jaeger -n "$MONITORING_NAMESPACE" --ignore-not-found
+  helm uninstall jaeger -n "$MONITORING_NAMESPACE" --ignore-not-found
   kubectl delete -n "$MONITORING_NAMESPACE" secret grafana-admin-secret grafana-basic-auth --ignore-not-found
   kubectl delete cm grafana-datasources grafana-dashboard-openemr -n "$MONITORING_NAMESPACE" --ignore-not-found
   kubectl delete secret alertmanager-config -n "$MONITORING_NAMESPACE" --ignore-not-found
@@ -1508,6 +1688,7 @@ main(){
 
   load_config
   check_dependencies
+  log_info "AWS Region detected: ${AWS_REGION}"
   check_kubernetes
   ensure_namespace "$MONITORING_NAMESPACE"
   create_monitoring_rbac
@@ -1545,6 +1726,7 @@ main(){
       install_jaeger                      # <-- cert-manager auto-installed & pinned here
       cleanup_duplicate_pods
       create_additional_hpa
+      create_grafana_cloudwatch_iam       # Setup CloudWatch IAM before datasources
       create_grafana_datasources
       create_alertmanager_config
       create_openemr_monitoring

@@ -368,7 +368,7 @@ Next steps for first-time deployment:
 • **✅ Logging Status**: Fully functional with test logs, Apache logs, and forward protocol support
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
-     - Prometheus v77.11.0 (metrics & alerting)
+     - Prometheus v77.12.0 (metrics & alerting)
      - Grafana (dashboards with auto-discovery)
      - Loki v3.5.3 (log aggregation)
      - Jaeger v3.4.1 (distributed tracing)
@@ -620,9 +620,9 @@ cd ../scripts
 
 **What this optional monitoring stack adds:**
 
-- 📊 **Prometheus**: kube-prometheus-stack v77.11.0 (metrics collection & alerting)
+- 📊 **Prometheus**: kube-prometheus-stack v77.12.0 (metrics collection & alerting)
 - 📈 **Grafana**: 20+ pre-built Kubernetes dashboards with auto-discovery and secure credentials
-- 📝 **Loki**: v6.41.0 single-binary (log aggregation with 720h retention)
+- 📝 **Loki**: v6.41.1 single-binary (log aggregation with 720h retention)
 - 🔍 **Jaeger**: v3.4.1 (distributed tracing)
 - 🚨 **AlertManager**: Slack integration support with customizable notifications
 - 🎯 **OpenEMR Integration**: Automatically and continually collects a broad set of metrics from the OpenEMR namespace where your application is running so you can precisely monitor the health and performance of your OpenEMR deployment in real-time. (see [monitoring documentation](./monitoring/README.md) guidance for creating custom dashboards)

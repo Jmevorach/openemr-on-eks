@@ -212,3 +212,95 @@ data:
         log_stream_prefix   metrics-
         auto_create_group   true
         retry_limit         3
+
+    # ===== LOKI OUTPUTS =====
+    # Send all logs to Loki for unified log aggregation and visualization in Grafana
+    
+    # Test logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               test.logs
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=test, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # Apache logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               apache.*
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=apache, cluster=${CLUSTER_NAME}
+        label_keys          $tag
+        line_format         json
+        auto_kubernetes_labels on
+
+    # Forward logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               forward.logs
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=forward, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # OpenEMR Application logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               openemr.application
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=application, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # OpenEMR System logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               openemr.system
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=system, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # OpenEMR Audit logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               openemr.audit
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=audit, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # PHP Error logs to Loki
+    [OUTPUT]
+        Name                loki
+        Match               openemr.php_error
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=openemr, namespace=openemr, log_type=php_error, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
+
+    # Fluent Bit Metrics to Loki
+    [OUTPUT]
+        Name                loki
+        Match               fluent-bit.metrics
+        host                loki-gateway.monitoring.svc.cluster.local
+        port                80
+        uri                 /loki/api/v1/push
+        labels              job=fluent-bit, namespace=openemr, log_type=metrics, cluster=${CLUSTER_NAME}
+        line_format         json
+        auto_kubernetes_labels on
