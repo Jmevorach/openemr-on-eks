@@ -1622,11 +1622,12 @@ The project includes a comprehensive **automated end-to-end backup/restore test 
 2. **OpenEMR Installation** - Full application deployment
 3. **Test Data Creation** - Timestamped proof files for verification
 4. **Backup Creation** - Complete backup of the installation
-5. **Infrastructure Destruction** - Complete resource cleanup
-6. **Infrastructure Recreation** - Rebuild from scratch
-7. **Backup Restoration** - Restore from backup
-8. **Verification** - Confirm data integrity and connectivity
-9. **Final Cleanup** - Remove all test resources
+5. **Monitoring Stack Test** - Validates monitoring stack installation and uninstallation
+6. **Infrastructure Destruction** - Complete resource cleanup
+7. **Infrastructure Recreation** - Rebuild from scratch
+8. **Backup Restoration** - Restore from backup
+9. **Verification** - Confirm data integrity and connectivity
+10. **Final Cleanup** - Remove all test resources
 
 #### **Test Benefits**
 
