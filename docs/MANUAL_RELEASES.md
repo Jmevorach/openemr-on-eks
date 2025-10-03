@@ -150,7 +150,7 @@ The system creates:
    ./scripts/test-end-to-end-backup-restore.sh --cluster-name openemr-eks-test
    ```
 
-   - All 9 test steps must pass successfully
+   - All 10 test steps must pass successfully
    - This ensures disaster recovery capabilities remain intact
    - No exceptions - testing is mandatory for all releases
 
@@ -195,11 +195,12 @@ Before any manual release can be created, the end-to-end backup/restore test scr
 # Run the complete end-to-end test
 ./scripts/test-end-to-end-backup-restore.sh --cluster-name openemr-eks-test
 
-# Expected outcome: All 9 test steps must pass
+# Expected outcome: All 10 test steps must pass
 # ✅ Infrastructure deployment
 # ✅ OpenEMR installation
 # ✅ Test data creation
 # ✅ Backup creation
+# ✅ Monitoring stack test
 # ✅ Infrastructure destruction
 # ✅ Infrastructure recreation
 # ✅ Backup restoration

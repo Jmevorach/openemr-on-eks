@@ -413,11 +413,12 @@ kubectl get pod <pending-pod> -n openemr -o yaml | grep -A 5 "resources:"
 # Run the complete end-to-end test
 ./scripts/test-end-to-end-backup-restore.sh --cluster-name openemr-eks-test
 
-# Expected outcome: All 9 test steps must pass
+# Expected outcome: All 10 test steps must pass
 # ✅ Infrastructure deployment
 # ✅ OpenEMR installation
 # ✅ Test data creation
 # ✅ Backup creation
+# ✅ Monitoring stack test
 # ✅ Infrastructure destruction
 # ✅ Infrastructure recreation
 # ✅ Backup restoration

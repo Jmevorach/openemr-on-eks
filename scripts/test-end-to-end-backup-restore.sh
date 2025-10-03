@@ -22,10 +22,11 @@
 # 3. Create test data and proof files
 # 4. Execute backup process
 # 5. Test monitoring stack install/uninstall
-# 6. Clean deployment and restore from backup
-# 7. Verify data integrity and application functionality
-# 8. Generate comprehensive test report
-# 9. Clean up test resources
+# 6. Delete all infrastructure
+# 7. Recreate infrastructure
+# 8. Restore from backup
+# 9. Verify data integrity and application functionality
+# 10. Clean up test resources
 
 set -euo pipefail
 
