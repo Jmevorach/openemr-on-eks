@@ -1,4 +1,4 @@
-# OpenEMR EKS Testing Guide
+# OpenEMR on EKS Testing Guide
 
 This guide covers the comprehensive testing strategy for the OpenEMR EKS deployment project, including automated CI/CD tests, pre-commit hooks, and manual testing procedures.
 

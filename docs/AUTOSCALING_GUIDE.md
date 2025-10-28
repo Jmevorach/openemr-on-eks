@@ -1,4 +1,4 @@
-# OpenEMR Autoscaling Configuration Guide
+# OpenEMR on EKS Autoscaling Configuration Guide
 
 This guide helps you configure optimal autoscaling for your OpenEMR deployment on EKS Auto Mode based on your healthcare organization's specific needs.
 

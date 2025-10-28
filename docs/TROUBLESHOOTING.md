@@ -1,4 +1,4 @@
-# OpenEMR EKS Auto Mode Troubleshooting Guide
+# OpenEMR on EKS Troubleshooting Guide
 
 This comprehensive guide helps diagnose and resolve issues with OpenEMR on EKS Auto Mode, with specific focus on healthcare compliance and Auto Mode-specific challenges.
 

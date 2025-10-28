@@ -1,4 +1,4 @@
-# OpenEMR Backup & Restore Guide
+# OpenEMR on EKS Backup & Restore Guide
 
 This guide covers the comprehensive backup and restore system for OpenEMR on EKS, designed to protect your critical healthcare data with cross-region disaster recovery capabilities.
 

@@ -1,4 +1,4 @@
-# OpenEMR EKS Auto Mode Deployment Guide
+# OpenEMR on EKS Auto Mode Deployment Guide
 
 This comprehensive guide provides step-by-step instructions for deploying a production-ready OpenEMR system on Amazon EKS with Auto Mode.
 

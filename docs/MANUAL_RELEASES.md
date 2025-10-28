@@ -1,4 +1,4 @@
-# Manual GitHub Releases
+# OpenEMR on EKS Manual GitHub Releases Guide
 
 ## 📋 Table of Contents
 
@@ -17,7 +17,6 @@
 - [Best Practices](#-best-practices)
 - [Related Documentation](#-related-documentation)
 - [Support](#-support)
-- [Version History](#-version-history)
 
 ---
 
@@ -468,12 +467,6 @@ For issues with the manual release system:
 2. Review this documentation
 3. Check the workflow file for configuration issues
 4. Create an [issue](../../../issues) in the repository with detailed error information
-
-## 🔄 Version History
-
-| Version | Date       | Changes                                     |
-|---------|------------|---------------------------------------------|
-| v.1.0.0 | 2025-08-25 | First release of manual-only release system |
 
 ---
 

@@ -1,4 +1,4 @@
-# OpenEMR EKS Version Awareness System
+# OpenEMR on EKS Version Awareness System Guide
 
 This document describes the comprehensive version awareness and notification system for the OpenEMR on EKS project. The system provides **read-only awareness** of available updates without automatically applying any changes.
 

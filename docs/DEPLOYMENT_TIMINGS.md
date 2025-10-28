@@ -1,4 +1,4 @@
-# OpenEMR on EKS - Deployment Timings Guide
+# OpenEMR on EKS Deployment Timings Guide
 
 ## 📊 Overview
 
@@ -359,7 +359,7 @@ These operations can vary significantly:
 | **App Deploy** | 7 min | 9 min | 19 min | High variability |
 | **Backup** | 29 sec | 32 sec | 35 sec | Very consistent |
 | **Restore** | 38 min | 40 min | 43 min | Very consistent (v3.0) |
-| **Infrastructure Delete** | 13 min | 15 min | 17 min | With robustness features |
+| **Infrastructure Delete** | 13 min | 15 min | 17 min | Very consistent (v3.0) |
 | **Full E2E Test** | 155 min | 162 min | 170 min | Includes all phases |
 
 ---

@@ -1,4 +1,4 @@
-# End-to-End Testing Requirements
+# OpenEMR on EKS End-to-End Testing Requirements Guide
 
 ## 🔒 **MANDATORY REQUIREMENT**
 
