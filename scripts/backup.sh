@@ -337,8 +337,7 @@ check_bucket_exists() {
     if [ $head_exit -eq 0 ]; then
         # Bucket exists, try to get location to verify it's fully available
         local location_output
-        location_output=$(aws s3api get-bucket-location --bucket "$bucket_name" --region "$region" 2>&1)
-        if [ $? -eq 0 ] && echo "$location_output" | grep -q '"'; then
+        if location_output=$(aws s3api get-bucket-location --bucket "$bucket_name" --region "$region" 2>&1) && echo "$location_output" | grep -q '"'; then
             echo "exists"
         else
             # Bucket exists but might be in deleting state
