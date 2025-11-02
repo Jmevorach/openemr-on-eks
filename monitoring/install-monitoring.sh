@@ -69,8 +69,8 @@
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ Helm Chart Versions                                                     │
 # └─────────────────────────────────────────────────────────────────────────┘
-#   CHART_KPS_VERSION          kube-prometheus-stack chart version (default: 78.3.2)
-#   CHART_LOKI_VERSION         Loki chart version (default: 6.43.0)
+#   CHART_KPS_VERSION          kube-prometheus-stack chart version (default: 79.1.0)
+#   CHART_LOKI_VERSION         Loki chart version (default: 6.45.2)
 #   CHART_JAEGER_VERSION       Jaeger chart version (default: 3.4.1)
 #   CERT_MANAGER_VERSION       cert-manager version (default: v1.19.1)
 #
@@ -182,8 +182,8 @@ readonly VALUES_FILE="${VALUES_FILE:-${SCRIPT_DIR}/prometheus-values.yaml}"
 readonly LOG_FILE="${LOG_FILE:-${SCRIPT_DIR}/openemr-monitoring.log}"
 
 # Chart versions (pin to known-good)
-readonly CHART_KPS_VERSION="${CHART_KPS_VERSION:-78.3.2}"
-readonly CHART_LOKI_VERSION="${CHART_LOKI_VERSION:-6.43.0}"
+readonly CHART_KPS_VERSION="${CHART_KPS_VERSION:-79.1.0}"
+readonly CHART_LOKI_VERSION="${CHART_LOKI_VERSION:-6.45.2}"
 readonly CHART_JAEGER_VERSION="${CHART_JAEGER_VERSION:-3.4.1}"
 
 # Timeouts / retries
@@ -1054,10 +1054,53 @@ install_prometheus_stack(){
   log_success "Prometheus Stack installed and all pods ready"; log_audit "INSTALL" "prometheus-stack" "SUCCESS"
 }
 install_loki_stack(){
-  log_step "Installing Loki (version ${CHART_LOKI_VERSION})..."
+  log_step "Installing Loki (version ${CHART_LOKI_VERSION}) with S3 storage..."
   log_info "⏱️  Expected duration: ~3 minutes"
-  local sc_loki="$STORAGE_CLASS_RWO" am_loki="$ACCESS_MODE_RWO"
-  if [[ -n "$STORAGE_CLASS_RWX" ]] && kubectl get storageclass "$STORAGE_CLASS_RWX" >/dev/null 2>&1; then sc_loki="$STORAGE_CLASS_RWX"; am_loki="$ACCESS_MODE_RWX"; log_info "Using RWX storage for Loki: $sc_loki"; fi
+  
+  # Get S3 bucket name and IAM role ARN from Terraform outputs
+  local terraform_dir="${SCRIPT_DIR}/../terraform"
+  local loki_bucket_name=""
+  local loki_role_arn=""
+  
+  if [[ -d "$terraform_dir" ]] && command -v terraform >/dev/null 2>&1; then
+    log_info "Retrieving Loki S3 bucket and IAM role from Terraform outputs..."
+    cd "$terraform_dir" || return 1
+    loki_bucket_name=$(terraform output -raw loki_s3_bucket_name 2>/dev/null || echo "")
+    loki_role_arn=$(terraform output -raw loki_s3_role_arn 2>/dev/null || echo "")
+    cd "$SCRIPT_DIR" || return 1
+    
+    if [[ -z "$loki_bucket_name" ]] || [[ -z "$loki_role_arn" ]]; then
+      log_error "Failed to retrieve Loki S3 bucket name or IAM role ARN from Terraform"
+      log_error "Bucket name: ${loki_bucket_name:-NOT_FOUND}"
+      log_error "Role ARN: ${loki_role_arn:-NOT_FOUND}"
+      log_error "Please ensure Terraform has been applied with the Loki S3 resources"
+      return 1
+    fi
+    
+    log_success "Found Loki S3 bucket: $loki_bucket_name"
+    log_success "Found Loki IAM role: $loki_role_arn"
+  else
+    log_error "Terraform directory not found or terraform command not available"
+    log_error "Cannot retrieve S3 bucket and IAM role for Loki"
+    return 1
+  fi
+  
+  # Annotate Loki service account with IAM role ARN for IRSA
+  log_step "Configuring Loki service account with IAM role annotation..."
+  ensure_namespace "$MONITORING_NAMESPACE"
+  
+  # Create or update Loki service account with IAM role annotation
+  kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loki
+  namespace: ${MONITORING_NAMESPACE}
+  annotations:
+    eks.amazonaws.com/role-arn: ${loki_role_arn}
+EOF
+  
+  log_success "Loki service account configured with IAM role annotation"
   
   # Install with retry logic for network resilience
   local max_retries=3
@@ -1075,26 +1118,30 @@ install_loki_stack(){
       continue
     fi
     
-    # Attempt Helm installation with enhanced timeout and retry settings
+    # Attempt Helm installation with S3 storage configuration
+    # Note: Disable persistence since we're using S3 for storage (no local PVC needed)
     if helm upgrade --install loki grafana/loki \
       --namespace "$MONITORING_NAMESPACE" \
       --version "$CHART_LOKI_VERSION" \
       --timeout "35m" --atomic --wait --wait-for-jobs \
       --set deploymentMode=SingleBinary \
+      --set serviceAccount.name=loki \
+      --set serviceAccount.create=false \
       --set loki.auth_enabled=false \
-      --set loki.storage.type=filesystem \
-      --set loki.storage.filesystem.chunks_directory=/var/loki/chunks \
-      --set loki.storage.filesystem.rules_directory=/var/loki/rules \
+      --set loki.storage.type=s3 \
+      --set loki.storage.s3.region="${AWS_REGION}" \
+      --set loki.storage.bucketNames.chunks="${loki_bucket_name}" \
+      --set loki.storage.bucketNames.ruler="${loki_bucket_name}" \
+      --set loki.storage.bucketNames.admin="${loki_bucket_name}" \
       --set loki.schemaConfig.configs[0].from=2024-01-01 \
-      --set loki.schemaConfig.configs[0].object_store=filesystem \
+      --set loki.schemaConfig.configs[0].object_store=s3 \
       --set loki.schemaConfig.configs[0].store=tsdb \
       --set loki.schemaConfig.configs[0].schema=v13 \
       --set loki.schemaConfig.configs[0].index.prefix=loki_index_ \
       --set loki.schemaConfig.configs[0].index.period=24h \
       --set singleBinary.persistence.enabled=true \
-      --set singleBinary.persistence.storageClass="$sc_loki" \
-      --set singleBinary.persistence.accessModes="{$am_loki}" \
-      --set singleBinary.persistence.size=100Gi \
+      --set singleBinary.persistence.size=10Gi \
+      --set singleBinary.persistence.storageClass=gp3-monitoring-encrypted \
       --set singleBinary.resources.requests.cpu=200m \
       --set singleBinary.resources.requests.memory=512Mi \
       --set singleBinary.resources.limits.cpu=1000m \

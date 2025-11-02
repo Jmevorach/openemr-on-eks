@@ -367,12 +367,13 @@ Next steps for first-time deployment:
 • **✅ Logging Status**: Fully functional with test logs, Apache logs, and forward protocol support
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
-     - Prometheus v78.3.2 (metrics & alerting)
+     - Prometheus v79.1.0 (metrics & alerting)
      - Grafana (dashboards with auto-discovery)
-     - Loki v6.43.0 (log aggregation)
+     - Loki v6.45.2 (log aggregation with S3 storage)
      - Jaeger v3.4.1 (distributed tracing)
      - AlertManager (Slack integration support)
      - OpenEMR-specific monitoring (ServiceMonitor, PrometheusRule)
+   • **Loki S3 Storage**: Loki uses AWS S3 for production-grade log storage. As [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/), we configure object storage via cloud provider for production deployments. This provides better durability, scalability, and cost-effectiveness compared to filesystem storage.
    • Configure alerting for critical issues
    • Regular backup testing
 ```
@@ -619,9 +620,12 @@ cd ../scripts
 
 **What this optional monitoring stack adds:**
 
-- 📊 **Prometheus**: kube-prometheus-stack v78.3.2 (metrics collection & alerting)
+- 📊 **Prometheus**: kube-prometheus-stack v79.1.0 (metrics collection & alerting)
 - 📈 **Grafana**: 20+ pre-built Kubernetes dashboards with auto-discovery and secure credentials
-- 📝 **Loki**: v6.43.0 single-binary (log aggregation with 720h retention)
+- 📝 **Loki**: v6.45.2 single-binary (log aggregation with S3 storage and 720h retention)
+  - **Production-Grade Storage**: Uses AWS S3 for log storage (as [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/)) instead of filesystem storage
+  - **Benefits**: Better durability, scalability, cost-effectiveness, and lifecycle management compared to filesystem storage
+  - **IAM Integration**: Uses IRSA (IAM Roles for Service Accounts) for secure, credential-free S3 access
 - 🔍 **Jaeger**: v3.4.1 (distributed tracing)
 - 🚨 **AlertManager**: Slack integration support with customizable notifications
 - 🎯 **OpenEMR Integration**: Automatically and continually collects a broad set of metrics from the OpenEMR namespace where your application is running so you can precisely monitor the health and performance of your OpenEMR deployment in real-time. (see [monitoring documentation](./monitoring/README.md) guidance for creating custom dashboards)

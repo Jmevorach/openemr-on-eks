@@ -228,3 +228,95 @@ resource "aws_iam_role_policy_attachment" "grafana_cloudwatch" {
   role       = aws_iam_role.grafana_cloudwatch.name
   policy_arn = aws_iam_policy.grafana_cloudwatch.arn
 }
+
+# =============================================================================
+# IAM ROLE AND POLICY FOR LOKI S3 STORAGE
+# =============================================================================
+# This configuration creates an IAM role and policy for Loki to access S3 storage
+# for log aggregation and long-term retention.
+
+# IAM Role for Loki - Service account role for S3 storage access
+# This role allows Loki pods to read and write to S3 for log storage
+resource "aws_iam_role" "loki_s3" {
+  name        = "${var.cluster_name}-loki-s3-role"
+  description = "IAM role for Loki to access S3 storage for log aggregation"
+
+  # Trust policy for IRSA (IAM Roles for Service Accounts)
+  # Allows the Loki service account in monitoring namespace to assume this role
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          # OIDC provider for EKS cluster service account authentication
+          Federated = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}"
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            # Restrict to Loki service account in monitoring namespace
+            # Note: Service account name may vary based on Loki deployment mode
+            "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:sub" = "system:serviceaccount:monitoring:loki"
+            # Restrict to STS audience for security
+            "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:aud" = "sts.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.cluster_name}-loki-s3-role"
+    Component   = "monitoring"
+    Description = "Loki S3 storage access"
+  }
+}
+
+# IAM Policy for Loki S3 access - Read/write permissions for Loki storage bucket
+# This policy grants Loki the necessary permissions to read and write to S3
+resource "aws_iam_policy" "loki_s3" {
+  name        = "${var.cluster_name}-loki-s3-policy"
+  description = "Policy for Loki to access S3 storage bucket"
+
+  # Policy document defining S3 permissions for Loki
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # S3 bucket permissions
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:GetBucketVersioning"
+        ]
+        Resource = aws_s3_bucket.loki_storage.arn
+      },
+      {
+        # S3 object permissions
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:GetObjectVersion",
+          "s3:RestoreObject"
+        ]
+        Resource = "${aws_s3_bucket.loki_storage.arn}/*"
+      }
+    ]
+  })
+
+  tags = {
+    Name      = "${var.cluster_name}-loki-s3-policy"
+    Component = "monitoring"
+  }
+}
+
+# Attach the S3 policy to the Loki IAM role
+# This grants the role the permissions defined in the policy
+resource "aws_iam_role_policy_attachment" "loki_s3" {
+  role       = aws_iam_role.loki_s3.name
+  policy_arn = aws_iam_policy.loki_s3.arn
+}

@@ -227,14 +227,28 @@ This guide provides measured timing data for various operations in the OpenEMR o
 
 ### Prometheus/Grafana/Loki Installation
 
-**Total Time:** 7-8 minutes
+**Total Time:** 4-5 minutes (updated with S3 storage configuration and measured timings)
 
 | Component | Duration | Notes |
 |-----------|----------|-------|
-| **cert-manager** | 1-2 min | Certificate management |
-| **Prometheus Operator** | 3-4 min | Metrics collection |
-| **Loki** | 2-3 min | Log aggregation |
-| **Grafana** | 1-2 min | Dashboard deployment |
+| **Setup & Validation** | ~30 sec | Configuration validation, dependency checks, cluster connectivity |
+| **Prometheus Operator** | ~1.5-2 min | Metrics collection (includes Prometheus and Grafana) |
+| **Loki** | ~1 min | Log aggregation with S3 storage configuration |
+| **Jaeger** | ~15 sec | Distributed tracing |
+| **Total** | **~4.5 min** | Complete monitoring stack installation |
+
+**Measured Installation Times (November 2025):**
+- **Total Stack Installation**: 258 seconds (4.30 minutes) - end-to-end from script start to completion
+- **Prometheus Stack**: ~1 minute 43 seconds (from installation start to pods ready)
+- **Loki**: ~59 seconds (from Helm install start to pods ready)
+- **Setup Phase**: ~30 seconds (validation, dependency checks, Terraform output retrieval)
+
+**Note on Loki Installation:**
+- **S3 Storage Setup**: Loki installation includes Terraform output retrieval, IAM role annotation, ServiceAccount creation, and S3 bucket configuration
+- **Actual Timing**: ~1 minute (faster than initial estimate due to optimized configuration)
+- **Architecture Improvement**: Uses AWS S3 for production-grade storage (as [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/)) instead of filesystem storage
+- **Benefits**: Better durability, scalability, lifecycle management, and cost-effectiveness for production workloads
+- **Persistence**: Uses 10Gi EBS volume for temporary files (read-only filesystem fix) while S3 is used for primary storage
 
 ### Monitoring Stack Uninstallation
 

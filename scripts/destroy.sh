@@ -536,33 +536,79 @@ empty_s3_bucket() {
 }
 
 cleanup_s3_buckets() {
-    log_step "Cleaning up S3 buckets..."
+    log_step "Cleaning up Terraform-managed S3 buckets..."
     
-    local buckets
-    buckets=$(aws s3api list-buckets \
-        --query "Buckets[?contains(Name, '$CLUSTER_NAME')].Name" \
-        --output text 2>/dev/null || echo "")
+    # Get bucket names from Terraform outputs (only buckets created by Terraform)
+    local terraform_buckets=()
+    cd "$TERRAFORM_DIR" || {
+        log_warning "Cannot access Terraform directory, skipping S3 bucket cleanup"
+        cd - >/dev/null
+        return 0
+    }
     
-    if [ -n "$buckets" ]; then
-        for bucket in $buckets; do
+    # Get ALB logs bucket
+    local alb_bucket
+    alb_bucket=$(terraform output -raw alb_logs_bucket_name 2>/dev/null || echo "")
+    if [ -n "$alb_bucket" ] && [ "$alb_bucket" != "null" ]; then
+        terraform_buckets+=("$alb_bucket")
+        log_info "Found ALB logs bucket from Terraform: $alb_bucket"
+    fi
+    
+    # Get WAF logs bucket (may not exist if WAF is disabled)
+    local waf_bucket
+    waf_bucket=$(terraform output -raw waf_logs_bucket_name 2>/dev/null || echo "")
+    if [ -n "$waf_bucket" ] && [ "$waf_bucket" != "null" ]; then
+        terraform_buckets+=("$waf_bucket")
+        log_info "Found WAF logs bucket from Terraform: $waf_bucket"
+    fi
+    
+    # Get Loki storage bucket
+    local loki_bucket
+    loki_bucket=$(terraform output -raw loki_s3_bucket_name 2>/dev/null || echo "")
+    if [ -n "$loki_bucket" ] && [ "$loki_bucket" != "null" ]; then
+        terraform_buckets+=("$loki_bucket")
+        log_info "Found Loki storage bucket from Terraform: $loki_bucket"
+    fi
+    
+    cd - >/dev/null
+    
+    if [ ${#terraform_buckets[@]} -gt 0 ]; then
+        log_info "Found ${#terraform_buckets[@]} Terraform-managed S3 bucket(s) to clean up"
+        
+        for bucket in "${terraform_buckets[@]}"; do
             # Skip backup buckets - they should be preserved for restore operations
             if [[ "$bucket" == *"backup"* ]] || [[ "$bucket" == *"openemr-backups"* ]]; then
                 log_info "Skipping backup bucket: $bucket (preserved for restore operations)"
                 continue
             fi
             
-            log_info "Processing bucket: $bucket"
+            log_info "Processing Terraform-managed bucket: $bucket"
             
-            # Empty the bucket completely
+            # Verify bucket exists before attempting cleanup
+            if ! aws s3api head-bucket --bucket "$bucket" --no-cli-pager 2>/dev/null; then
+                log_warning "Bucket $bucket does not exist (may have been already deleted), skipping"
+                continue
+            fi
+            
+            # Empty the bucket completely (handles versioned buckets including Loki storage)
+            # This includes: ALB logs, WAF logs, and Loki storage buckets
             empty_s3_bucket "$bucket"
             
             # Delete the bucket
-            aws s3api delete-bucket --bucket "$bucket" --no-cli-pager 2>/dev/null || log_warning "Failed to delete bucket: $bucket"
+            # Note: Terraform will also attempt to delete these buckets,
+            # but pre-emptively emptying them helps avoid versioning-related issues
+            if aws s3api delete-bucket --bucket "$bucket" --no-cli-pager 2>/dev/null; then
+                log_success "Deleted bucket: $bucket"
+            else
+                log_warning "Failed to delete bucket: $bucket (Terraform will attempt to delete it)"
+            fi
         done
         
-        log_success "S3 buckets cleaned up (backup buckets preserved)"
+        log_success "Terraform-managed S3 buckets cleaned up (backup buckets preserved)"
+        log_info "Cleaned buckets include: ALB logs, WAF logs, and Loki storage buckets"
     else
-        log_info "No S3 buckets found"
+        log_info "No Terraform-managed S3 buckets found in Terraform outputs"
+        log_info "This is expected if Terraform has not been applied yet or state is unavailable"
     fi
 }
 

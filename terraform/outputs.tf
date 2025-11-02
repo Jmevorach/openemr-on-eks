@@ -156,6 +156,21 @@ output "grafana_cloudwatch_role_arn" {
   value       = aws_iam_role.grafana_cloudwatch.arn
 }
 
+output "loki_s3_bucket_name" {
+  description = "Name of the S3 bucket for Loki log storage"
+  value       = aws_s3_bucket.loki_storage.bucket
+}
+
+output "loki_s3_bucket_arn" {
+  description = "ARN of the S3 bucket for Loki log storage"
+  value       = aws_s3_bucket.loki_storage.arn
+}
+
+output "loki_s3_role_arn" {
+  description = "ARN of the Loki IAM role for S3 storage access"
+  value       = aws_iam_role.loki_s3.arn
+}
+
 # CloudWatch Logging Outputs
 # These outputs expose key information about the CloudWatch log groups that collect
 # and store logs from OpenEMR and Fluent Bit, enabling centralized log management

@@ -307,3 +307,130 @@ resource "aws_s3_bucket_policy" "waf_logs" {
     ]
   })
 }
+
+############################
+# Loki Storage Bucket
+############################
+
+# S3 bucket for storing Loki logs and chunks
+# This bucket stores all log data managed by Loki for long-term retention
+resource "aws_s3_bucket" "loki_storage" {
+  bucket = "${var.cluster_name}-loki-storage-${random_id.bucket_suffix.hex}"
+
+  tags = {
+    Name        = "${var.cluster_name}-loki-storage"
+    Purpose     = "Loki Log Storage"
+    Environment = var.environment
+    Component   = "monitoring"
+  }
+}
+
+# Set object ownership for the Loki storage bucket
+# This ensures proper access control for Loki service account
+resource "aws_s3_bucket_ownership_controls" "loki_storage" {
+  bucket = aws_s3_bucket.loki_storage.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+# Enable versioning for the Loki storage bucket
+# This provides protection against accidental deletion and allows for recovery
+resource "aws_s3_bucket_versioning" "loki_storage" {
+  bucket = aws_s3_bucket.loki_storage.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Configure server-side encryption for the Loki storage bucket
+# Uses KMS encryption with the S3-specific KMS key for enhanced security
+resource "aws_s3_bucket_server_side_encryption_configuration" "loki_storage" {
+  bucket = aws_s3_bucket.loki_storage.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.s3.arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+# Configure lifecycle rules for the Loki storage bucket
+# This manages log retention to optimize storage costs and maintain compliance
+resource "aws_s3_bucket_lifecycle_configuration" "loki_storage" {
+  bucket = aws_s3_bucket.loki_storage.id
+
+  rule {
+    id     = "loki_storage_lifecycle"
+    status = "Enabled"
+
+    # Transition older logs to Intelligent-Tiering after 30 days
+    transition {
+      days          = 30
+      storage_class = "INTELLIGENT_TIERING"
+    }
+
+    # Transition to Glacier after 90 days
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    # Delete after 720 days (30 days retention as configured in Loki)
+    expiration {
+      days = 720
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+# Block public access to the Loki storage bucket
+# This ensures that log data remains private and secure
+resource "aws_s3_bucket_public_access_block" "loki_storage" {
+  bucket = aws_s3_bucket.loki_storage.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets  = true
+}
+
+# Loki bucket policy - allows Loki service account to read/write
+# This policy is attached via IAM role, but this ensures bucket-level permissions
+resource "aws_s3_bucket_policy" "loki_storage" {
+  bucket     = aws_s3_bucket.loki_storage.id
+  depends_on = [aws_s3_bucket_ownership_controls.loki_storage]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowLokiAccess"
+        Effect = "Allow"
+        Principal = {
+          AWS = aws_iam_role.loki_s3.arn
+        }
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.loki_storage.arn,
+          "${aws_s3_bucket.loki_storage.arn}/*"
+        ]
+      }
+    ]
+  })
+}

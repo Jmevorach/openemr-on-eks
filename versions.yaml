@@ -80,21 +80,21 @@ terraform_modules:
 
   aws_pod_identity:
     source: "terraform-aws-modules/eks-pod-identity/aws"
-    current: "2.2.0"
+    current: "2.2.1"
     notify_on_update: true
     requires_aws_cli: false
     description: "AWS provided module for EKS pod identities for Terraform."
 
   aws_eks:
     source: "terraform-aws-modules/eks/aws"
-    current: "21.4.0"
+    current: "21.8.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "AWS provided module for EKS for Terraform."
 
   aws_vpc:
     source: "terraform-aws-modules/vpc/aws"
-    current: "6.4.0"
+    current: "6.5.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "AWS provided module for VPCs for Terraform."
@@ -241,14 +241,14 @@ semver_packages:
 # Monitoring Stack Versions
 monitoring:
   prometheus_operator:
-    current: "78.3.2"
+    current: "79.1.0"
     chart: "kube-prometheus-stack"
     notify_on_update: true
     requires_aws_cli: false
     description: "Hosts custom monitoring dashboards for the setup and integrates with pager duty for automated alerting."
 
   loki:
-    current: "6.43.0"
+    current: "6.45.2"
     chart: "loki"
     repository: "grafana"
     notify_on_update: true

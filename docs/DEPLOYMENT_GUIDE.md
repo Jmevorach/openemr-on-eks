@@ -926,12 +926,13 @@ Next steps:
    • Basic deployment: CloudWatch logs only
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
-     - Prometheus v78.3.2 (metrics & alerting)
+     - Prometheus v79.1.0 (metrics & alerting)
      - Grafana (dashboards with auto-discovery)
-     - Loki v6.43.0 (log aggregation)
+     - Loki v6.45.2 (log aggregation with S3 storage)
      - Jaeger v3.4.1 (distributed tracing)
      - AlertManager (Slack integration support)
      - OpenEMR-specific monitoring (ServiceMonitor, PrometheusRule)
+   • **Loki S3 Storage**: Loki uses AWS S3 for production-grade log storage. As [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/), we configure object storage via cloud provider for production deployments. This provides better durability, scalability, and cost-effectiveness compared to filesystem storage.
    • Configure alerting for critical issues
    • Regular backup testing
 

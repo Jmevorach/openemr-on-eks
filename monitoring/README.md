@@ -62,12 +62,24 @@ graph TB
 
 ### Storage Requirements
 
-| Component | Storage Size | Retention | Storage Class | Cost Impact |
+| Component | Storage Size | Retention | Storage Type | Cost Impact |
 |-----------|-------------|-----------|---------------|-------------|
-| **Prometheus** | 100Gi | 30 days | gp3-monitoring-encrypted | $8/month    |
-| **Grafana** | 20Gi | Persistent | gp3-monitoring-encrypted | $1.60/month |
-| **Loki** | 100Gi | 720 hours | gp3-monitoring-encrypted | $8/month    |
-| **AlertManager** | 20Gi | Persistent | gp3-monitoring-encrypted | $1.60/month |
+| **Prometheus** | 100Gi | 30 days | gp3-monitoring-encrypted (EBS) | $8/month    |
+| **Grafana** | 20Gi | Persistent | gp3-monitoring-encrypted (EBS) | $1.60/month |
+| **Loki** | N/A | 720 hours | AWS S3 (Object Storage) | Variable (lifecycle policies) |
+| **AlertManager** | 20Gi | Persistent | gp3-monitoring-encrypted (EBS) | $1.60/month |
+
+**Loki S3 Storage Architecture:**
+- **Production-Grade Storage**: Loki uses AWS S3 for log storage instead of filesystem storage
+- **Recommendation**: As [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/), we configure object storage via cloud provider for production deployments
+- **Benefits**:
+  - **Durability**: 99.999999999% (11 nines) durability with S3
+  - **Scalability**: Automatically scales with log volume without storage provisioning
+  - **Cost-Effectiveness**: Lifecycle policies automatically transition to cheaper storage tiers (Intelligent-Tiering after 30 days, Glacier after 90 days)
+  - **Lifecycle Management**: Automatic deletion after 720 days (30 days retention as configured in Loki)
+  - **Security**: KMS encryption and IAM role-based access (IRSA) - no credentials needed
+- **IAM Integration**: Uses IRSA (IAM Roles for Service Accounts) for secure, credential-free S3 access
+- **Setup**: Terraform automatically creates the S3 bucket and IAM role, installation script retrieves and configures them
 
 See pricing documentation for EBS [here](https://aws.amazon.com/ebs/pricing/).
 
@@ -128,6 +140,7 @@ Layer 2: Node-level (EKS Auto Mode)
 - ✅ OpenEMR deployed and running
 - ✅ Storage classes created (gp3-monitoring-encrypted)
 - ✅ EFS CSI driver installed
+- ✅ **Terraform applied** - Loki S3 bucket and IAM role must be created via Terraform before installation
 
 ### Required Tools
 
@@ -136,11 +149,32 @@ Layer 2: Node-level (EKS Auto Mode)
 kubectl version --client  # >= 1.29
 helm version             # >= 3.12
 jq --version            # >= 1.6
+terraform version       # >= 1.0 (for S3 bucket and IAM role setup)
 
 # Check cluster access
 kubectl cluster-info
 kubectl get nodes  # May be empty with Auto Mode
 ```
+
+### Terraform Requirements for Loki S3 Storage
+
+Before installing the monitoring stack, ensure Terraform has been applied to create the Loki S3 bucket and IAM role:
+
+```bash
+cd terraform
+
+# Verify Terraform is initialized
+terraform init
+
+# Apply Terraform to create Loki S3 bucket and IAM role
+terraform apply
+
+# Verify outputs are available
+terraform output loki_s3_bucket_name
+terraform output loki_s3_role_arn
+```
+
+The installation script will automatically retrieve the S3 bucket name and IAM role ARN from Terraform outputs. Without these, the Loki installation will fail.
 
 ### Cluster Capacity Requirements
 
@@ -177,7 +211,7 @@ export ENABLE_BASIC_AUTH="1"
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
 export SLACK_CHANNEL="#openemr-alerts"
 
-# Install (total install time ~5-10 minutes)
+# Install (total install time ~8-10 minutes with S3 storage)
 ./install-monitoring.sh
 
 # Verify installation
@@ -199,14 +233,17 @@ cat credentials/monitoring-credentials.txt
 
 ### Monthly Cost Breakdown by Organization Size
 
+**Note:** Loki now uses AWS S3 for primary storage, significantly reducing EBS storage costs while providing better durability and scalability. A small 10Gi EBS volume is used only for temporary files and local caching.
+
 #### Small Clinic
 
 | Component | Configuration                      | Monthly Cost     |
 |-----------|------------------------------------|------------------|
 | EC2 Compute (Auto Mode) | 2 t3.small equiv. AVG ($0.0208/hr) | $30.36           |
 | Auto Mode Fee (12%) | Management overhead                | $3.64            |
-| Storage (240Gi total) | GP3 encrypted                      | $19.20           |
-| **Total** |                                    | **~53.20/month** |
+| Storage (140Gi EBS + S3) | GP3 encrypted (Prometheus 100Gi, Grafana 20Gi, Loki 10Gi, AlertManager 20Gi) | $11.20           |
+| **S3 Storage (Loki)** | Variable (lifecycle policies) | ~$5-15           |
+| **Total** |                                    | **~50-60/month** |
 
 #### Hospital
 
@@ -214,8 +251,9 @@ cat credentials/monitoring-credentials.txt
 |-----------|-------------------------------------|------------------|
 | EC2 Compute (Auto Mode) | 2 t3.medium equiv. AVG ($0.0416/hr) | $60.74           |
 | Auto Mode Fee (12%) | Management overhead                 | $7.29            |
-| Storage (240Gi total) | GP3 encrypted                       | $19.20           |
-| **Total** |                                     | **~87.23/month** |
+| Storage (140Gi EBS + S3) | GP3 encrypted (Prometheus 100Gi, Grafana 20Gi, Loki 10Gi, AlertManager 20Gi) | $11.20           |
+| **S3 Storage (Loki)** | Variable (lifecycle policies) | ~$10-30          |
+| **Total** |                                     | **~89-109/month** |
 
 #### Large Hospital
 
@@ -223,8 +261,16 @@ cat credentials/monitoring-credentials.txt
 |-----------|------------------------------------|-------------------|
 | EC2 Compute (Auto Mode) | 2 t3.large equiv. AVG ($0.0832/hr) | $121.47           |
 | Auto Mode Fee (12%) | Management overhead                | $14.58            |
-| Storage (240Gi total) | GP3 encrypted                      | $19.20            |
-| **Total** |                                    | **~155.25/month** |
+| Storage (140Gi EBS + S3) | GP3 encrypted (Prometheus 100Gi, Grafana 20Gi, Loki 10Gi, AlertManager 20Gi) | $11.20            |
+| **S3 Storage (Loki)** | Variable (lifecycle policies) | ~$20-50           |
+| **Total** |                                    | **~167-197/month** |
+
+**S3 Storage Cost Notes:**
+- **Intelligent-Tiering**: After 30 days, data automatically transitions to lower-cost tiers
+- **Glacier**: After 90 days, data transitions to Glacier for archival storage
+- **Lifecycle Management**: Automatic deletion after 720 days (30-day retention as configured in Loki)
+- **Actual costs depend on log volume**: Typical deployments see $5-50/month for S3 storage depending on log ingestion rate
+- **Benefits over EBS**: No need to pre-provision storage, automatic scaling, better durability (11 nines), and lower costs at scale
 
 ### Cost Optimization Strategies
 
@@ -232,7 +278,23 @@ cat credentials/monitoring-credentials.txt
 # 1. Reduce retention periods
 export PROMETHEUS_RETENTION="15d"  # Default: 30d
 export LOKI_RETENTION="360h"       # Default: 720h
+
+# 2. S3 Lifecycle Policies (automatically configured)
+# - Intelligent-Tiering after 30 days (reduces storage cost)
+# - Glacier transition after 90 days (further cost reduction)
+# - Automatic deletion after 720 days
+# - No action needed - these are handled by Terraform
+
+# 3. Reduce Loki EBS volume size (if needed)
+# The Loki EBS volume is only for temporary files (10Gi default)
+# This can be reduced if log volume is very low, but 10Gi is already minimal
 ```
+
+**Loki S3 Storage Cost Optimization:**
+- **Automatic tiering**: Data automatically moves to cheaper storage tiers (no manual intervention needed)
+- **Cost-effective at scale**: S3 storage scales with your log volume without upfront provisioning
+- **Lifecycle management**: Old data is automatically archived and deleted according to retention policies
+- **Actual savings**: Reduced from 100Gi EBS ($8/month) to 10Gi EBS ($0.80/month) + variable S3 costs ($5-50/month depending on volume)
 
 ## ⚙️ Configuration
 
