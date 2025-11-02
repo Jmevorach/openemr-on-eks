@@ -1316,7 +1316,8 @@ deploy_test_data() {
     # Get all pods
     local all_pods
     all_pods=$(kubectl get pods -n "$NAMESPACE" -l app=openemr -o name 2>/dev/null)
-    local pod_count=$(echo "$all_pods" | wc -l | tr -d ' ')
+    local pod_count
+    pod_count=$(echo "$all_pods" | wc -l | tr -d ' ')
     log_info "Found $pod_count pod(s) to wait for"
     
     # Wait for all pods to be ready using a more robust approach
