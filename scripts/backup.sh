@@ -321,6 +321,143 @@ wait_for_snapshot_availability() {
     return 1
 }
 
+# S3 bucket management functions - handle bucket state checking and creation with retry logic
+
+check_bucket_exists() {
+    # Check if an S3 bucket exists and return its state
+    # Returns: "exists", "deleting", "not-found", or "error"
+    local bucket_name=$1
+    local region=$2
+    
+    # Try to check bucket existence using head-bucket (most reliable)
+    local head_output
+    head_output=$(aws s3api head-bucket --bucket "$bucket_name" --region "$region" 2>&1)
+    local head_exit=$?
+    
+    if [ $head_exit -eq 0 ]; then
+        # Bucket exists, try to get location to verify it's fully available
+        local location_output
+        location_output=$(aws s3api get-bucket-location --bucket "$bucket_name" --region "$region" 2>&1)
+        if [ $? -eq 0 ] && echo "$location_output" | grep -q '"'; then
+            echo "exists"
+        else
+            # Bucket exists but might be in deleting state
+            echo "deleting"
+        fi
+    else
+        # Check error message for specific error codes
+        if echo "$head_output" | grep -q "404\|NoSuchBucket"; then
+            echo "not-found"
+        else
+            # Other errors (permission denied, etc.)
+            echo "error"
+        fi
+    fi
+}
+
+wait_for_bucket_deletion() {
+    # Wait for an S3 bucket deletion to complete before creating a new bucket
+    # This prevents "OperationAborted" errors from concurrent operations
+    local bucket_name=$1
+    local region=$2
+    local timeout=${3:-300}  # Default 5 minutes
+    local start_time
+    start_time=$(date +%s)
+    local elapsed=0
+
+    log_info "Waiting for bucket '$bucket_name' deletion to complete in $region..."
+
+    while [ $elapsed -lt "$timeout" ]; do
+        local bucket_state
+        bucket_state=$(check_bucket_exists "$bucket_name" "$region")
+        
+        if [ "$bucket_state" = "not-found" ]; then
+            log_success "Bucket deletion completed"
+            return 0
+        fi
+
+        elapsed=$(($(date +%s) - start_time))
+        local remaining=$((timeout - elapsed))
+
+        if [ $elapsed -ge "$timeout" ]; then
+            log_warning "Timeout waiting for bucket deletion after ${timeout}s"
+            return 1
+        fi
+
+        log_info "Bucket state: $bucket_state (${remaining}s remaining)"
+        sleep 10  # Check every 10 seconds
+    done
+
+    return 1
+}
+
+create_s3_bucket_with_retry() {
+    # Create an S3 bucket with retry logic and exponential backoff
+    # Handles "OperationAborted" errors from concurrent operations
+    local bucket_name=$1
+    local region=$2
+    local max_attempts=${3:-5}
+    local attempt=1
+    local base_delay=2
+
+    log_info "Creating S3 bucket: s3://${bucket_name} in region ${region}"
+
+    # Check if bucket exists in a deleting state
+    local bucket_state
+    bucket_state=$(check_bucket_exists "$bucket_name" "$region")
+    
+    if [ "$bucket_state" = "deleting" ]; then
+        log_info "Bucket is currently being deleted, waiting for deletion to complete..."
+        if ! wait_for_bucket_deletion "$bucket_name" "$region"; then
+            log_error "Failed to wait for bucket deletion - cannot proceed with bucket creation"
+        fi
+    elif [ "$bucket_state" = "exists" ]; then
+        log_info "Bucket already exists"
+        return 0
+    fi
+
+    while [ $attempt -le "$max_attempts" ]; do
+        # Calculate exponential backoff delay
+        local delay=$((base_delay * (2 ** (attempt - 1))))
+        
+        if [ $attempt -gt 1 ]; then
+            log_info "Retry attempt $attempt/$max_attempts after ${delay}s delay..."
+            sleep "$delay"
+        fi
+
+        # Attempt to create the bucket
+        local create_output
+        create_output=$(aws s3 mb "s3://${bucket_name}" --region "$region" 2>&1)
+        local create_exit=$?
+
+        if [ $create_exit -eq 0 ]; then
+            log_success "Bucket created successfully"
+            return 0
+        fi
+
+        # Check for specific error conditions
+        if echo "$create_output" | grep -q "OperationAborted"; then
+            log_warning "Bucket creation aborted due to concurrent operation (attempt $attempt/$max_attempts)"
+            if [ $attempt -lt "$max_attempts" ]; then
+                log_info "Waiting ${delay}s before retry..."
+            fi
+        elif echo "$create_output" | grep -q "BucketAlreadyOwnedByYou"; then
+            log_info "Bucket already exists and is owned by you"
+            return 0
+        elif echo "$create_output" | grep -q "BucketAlreadyExists"; then
+            log_info "Bucket already exists (may be in another region)"
+            return 0
+        else
+            log_error "Failed to create bucket: $create_output"
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    log_error "Failed to create bucket after $max_attempts attempts"
+    return 1
+}
+
 # Initialize backup
 echo -e "${GREEN}🚀 OpenEMR Backup Starting${NC}"
 echo -e "${BLUE}=========================${NC}"
@@ -444,16 +581,21 @@ BACKUP_BUCKET="openemr-backups-$(aws sts get-caller-identity --query Account --o
 
 log_info "Creating backup bucket: s3://${BACKUP_BUCKET}"
 
-if ! aws s3 ls "s3://${BACKUP_BUCKET}" --region "$BACKUP_REGION" >/dev/null 2>&1; then
-    aws s3 mb "s3://${BACKUP_BUCKET}" --region "$BACKUP_REGION"
-
+# Use retry logic to handle concurrent operations and "OperationAborted" errors
+if create_s3_bucket_with_retry "$BACKUP_BUCKET" "$BACKUP_REGION" 5; then
     # Enable versioning and encryption
-    aws s3api put-bucket-versioning \
+    log_info "Configuring bucket versioning and encryption..."
+    
+    if aws s3api put-bucket-versioning \
         --bucket "$BACKUP_BUCKET" \
         --region "$BACKUP_REGION" \
-        --versioning-configuration Status=Enabled
+        --versioning-configuration Status=Enabled 2>/dev/null; then
+        log_success "Bucket versioning enabled"
+    else
+        log_warning "Failed to enable bucket versioning (may already be enabled)"
+    fi
 
-    aws s3api put-bucket-encryption \
+    if aws s3api put-bucket-encryption \
         --bucket "$BACKUP_BUCKET" \
         --region "$BACKUP_REGION" \
         --server-side-encryption-configuration '{
@@ -462,11 +604,15 @@ if ! aws s3 ls "s3://${BACKUP_BUCKET}" --region "$BACKUP_REGION" >/dev/null 2>&1
                     "SSEAlgorithm": "AES256"
                 }
             }]
-        }'
+        }' 2>/dev/null; then
+        log_success "Bucket encryption configured"
+    else
+        log_warning "Failed to configure bucket encryption (may already be configured)"
+    fi
 
     log_success "Backup bucket created and configured"
 else
-    log_info "Backup bucket already exists"
+    log_error "Failed to create backup bucket after retries"
 fi
 
 # Initialize backup results
