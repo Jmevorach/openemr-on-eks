@@ -40,9 +40,9 @@ provider "aws" {
   # These tags help with cost allocation, resource management, and compliance
   default_tags {
     tags = {
-      Environment = var.environment  # Environment identifier (dev, staging, prod)
-      Project     = "OpenEMR"        # Project name for resource identification
-      ManagedBy   = "Terraform"      # Infrastructure management tool
+      Environment = var.environment # Environment identifier (dev, staging, prod)
+      Project     = "OpenEMR"       # Project name for resource identification
+      ManagedBy   = "Terraform"     # Infrastructure management tool
     }
   }
 }
@@ -65,21 +65,21 @@ resource "random_id" "global_suffix" {
 # Uses AWS CLI for authentication via EKS token-based authentication
 provider "kubernetes" {
   # EKS cluster endpoint for API server communication
-  host                   = module.eks.cluster_endpoint
-  
+  host = module.eks.cluster_endpoint
+
   # Cluster CA certificate for secure TLS communication
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  
+
   # Authentication configuration using AWS CLI and EKS token
   exec {
     # Kubernetes client authentication API version
     api_version = "client.authentication.k8s.io/v1beta1"
-    
+
     # AWS CLI command to get EKS authentication token
-    args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
-    
+    args = ["eks", "get-token", "--cluster-name", var.cluster_name]
+
     # Use AWS CLI for authentication
-    command     = "aws"
+    command = "aws"
   }
 }
 
@@ -94,7 +94,7 @@ provider "kubernetes" {
 data "aws_availability_zones" "available" {
   filter {
     name   = "opt-in-status"
-    values = ["opt-in-not-required"]  # Only include zones that don't require opt-in
+    values = ["opt-in-not-required"] # Only include zones that don't require opt-in
   }
 }
 
@@ -118,8 +118,8 @@ locals {
   # Common tags applied to resources for consistency
   # These tags help with cost allocation, resource management, and compliance
   common_tags = {
-    Environment = var.environment  # Environment identifier (dev, staging, prod)
-    Project     = "OpenEMR"        # Project name for resource identification
-    ManagedBy   = "Terraform"      # Infrastructure management tool
+    Environment = var.environment # Environment identifier (dev, staging, prod)
+    Project     = "OpenEMR"       # Project name for resource identification
+    ManagedBy   = "Terraform"     # Infrastructure management tool
   }
 }

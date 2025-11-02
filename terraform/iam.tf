@@ -55,26 +55,26 @@ resource "aws_iam_policy" "openemr" {
         # Secrets Manager permissions for database credentials and other secrets
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue",  # Retrieve secret values
-          "secretsmanager:DescribeSecret"   # Describe secret metadata
+          "secretsmanager:GetSecretValue", # Retrieve secret values
+          "secretsmanager:DescribeSecret"  # Describe secret metadata
         ]
-        Resource = "*"  # Allow access to all secrets (can be restricted for production)
+        Resource = "*" # Allow access to all secrets (can be restricted for production)
       },
       {
         # CloudWatch Logs permissions for application and Fluent Bit logging
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup",      # Create log groups for OpenEMR and Fluent Bit
-          "logs:CreateLogStream",     # Create log streams within log groups
-          "logs:PutLogEvents",        # Write log events to CloudWatch
-          "logs:DescribeLogGroups",   # List and describe log groups
-          "logs:DescribeLogStreams",  # List and describe log streams
-          "logs:GetLogGroupFields",   # Get fields from log groups for Grafana
-          "logs:StartQuery",          # Start CloudWatch Insights queries from Grafana
-          "logs:StopQuery",           # Stop CloudWatch Insights queries
-          "logs:GetQueryResults",     # Get CloudWatch Insights query results
-          "logs:GetLogEvents",        # Get log events for Grafana
-          "logs:FilterLogEvents"      # Filter log events in Grafana
+          "logs:CreateLogGroup",     # Create log groups for OpenEMR and Fluent Bit
+          "logs:CreateLogStream",    # Create log streams within log groups
+          "logs:PutLogEvents",       # Write log events to CloudWatch
+          "logs:DescribeLogGroups",  # List and describe log groups
+          "logs:DescribeLogStreams", # List and describe log streams
+          "logs:GetLogGroupFields",  # Get fields from log groups for Grafana
+          "logs:StartQuery",         # Start CloudWatch Insights queries from Grafana
+          "logs:StopQuery",          # Stop CloudWatch Insights queries
+          "logs:GetQueryResults",    # Get CloudWatch Insights query results
+          "logs:GetLogEvents",       # Get log events for Grafana
+          "logs:FilterLogEvents"     # Filter log events in Grafana
         ]
         Resource = [
           # OpenEMR application log groups
@@ -89,8 +89,8 @@ resource "aws_iam_policy" "openemr" {
         # S3 permissions for backup access during restore operations
         Effect = "Allow"
         Action = [
-          "s3:GetObject",        # Download backup files
-          "s3:ListBucket"        # List backup bucket contents
+          "s3:GetObject", # Download backup files
+          "s3:ListBucket" # List backup bucket contents
         ]
         Resource = [
           # Backup bucket - using pattern for backup buckets
@@ -169,27 +169,27 @@ resource "aws_iam_policy" "grafana_cloudwatch" {
         # CloudWatch Metrics permissions
         Effect = "Allow"
         Action = [
-          "cloudwatch:DescribeAlarmsForMetric",  # Describe alarms for metrics
-          "cloudwatch:DescribeAlarmHistory",     # Get alarm history
-          "cloudwatch:DescribeAlarms",           # List and describe alarms
-          "cloudwatch:ListMetrics",              # List available metrics
-          "cloudwatch:GetMetricStatistics",      # Get metric statistics (time series data)
-          "cloudwatch:GetMetricData",            # Get metric data (more efficient API)
-          "cloudwatch:GetInsightRuleReport"      # Get CloudWatch Insights reports
+          "cloudwatch:DescribeAlarmsForMetric", # Describe alarms for metrics
+          "cloudwatch:DescribeAlarmHistory",    # Get alarm history
+          "cloudwatch:DescribeAlarms",          # List and describe alarms
+          "cloudwatch:ListMetrics",             # List available metrics
+          "cloudwatch:GetMetricStatistics",     # Get metric statistics (time series data)
+          "cloudwatch:GetMetricData",           # Get metric data (more efficient API)
+          "cloudwatch:GetInsightRuleReport"     # Get CloudWatch Insights reports
         ]
-        Resource = "*"  # CloudWatch metrics don't support resource-level permissions
+        Resource = "*" # CloudWatch metrics don't support resource-level permissions
       },
       {
         # CloudWatch Logs permissions
         Effect = "Allow"
         Action = [
-          "logs:DescribeLogGroups",    # List and describe log groups
-          "logs:GetLogGroupFields",    # Get fields from log groups for queries
-          "logs:StartQuery",           # Start CloudWatch Logs Insights queries
-          "logs:StopQuery",            # Stop running queries
-          "logs:GetQueryResults",      # Get query results
-          "logs:GetLogEvents",         # Get log events from streams
-          "logs:FilterLogEvents"       # Filter log events for visualization
+          "logs:DescribeLogGroups", # List and describe log groups
+          "logs:GetLogGroupFields", # Get fields from log groups for queries
+          "logs:StartQuery",        # Start CloudWatch Logs Insights queries
+          "logs:StopQuery",         # Stop running queries
+          "logs:GetQueryResults",   # Get query results
+          "logs:GetLogEvents",      # Get log events from streams
+          "logs:FilterLogEvents"    # Filter log events for visualization
         ]
         # Allow access to all log groups for comprehensive monitoring
         # Can be restricted to specific log groups for production
@@ -203,15 +203,15 @@ resource "aws_iam_policy" "grafana_cloudwatch" {
           "ec2:DescribeInstances", # Describe EC2 instances for context
           "ec2:DescribeRegions"    # List available regions
         ]
-        Resource = "*"  # EC2 describe actions don't support resource-level permissions
+        Resource = "*" # EC2 describe actions don't support resource-level permissions
       },
       {
         # Resource Groups Tagging API for resource discovery
         Effect = "Allow"
         Action = [
-          "tag:GetResources"  # Get resources by tags for filtering
+          "tag:GetResources" # Get resources by tags for filtering
         ]
-        Resource = "*"  # Tag API doesn't support resource-level permissions
+        Resource = "*" # Tag API doesn't support resource-level permissions
       }
     ]
   })

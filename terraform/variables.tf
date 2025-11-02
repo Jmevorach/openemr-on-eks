@@ -9,7 +9,7 @@
 variable "aws_region" {
   description = "AWS region where all resources will be deployed"
   type        = string
-  default     = "us-west-2"  # Oregon - good balance of performance and cost
+  default     = "us-west-2" # Oregon - good balance of performance and cost
 }
 
 # Environment identifier for resource naming and tagging
@@ -35,7 +35,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.34"  # Latest stable version (DRA GA, Cgroup autoconfiguration GA)
+  default     = "1.34" # Latest stable version (DRA GA, Cgroup autoconfiguration GA)
 }
 
 # =============================================================================
@@ -48,7 +48,7 @@ variable "kubernetes_version" {
 variable "vpc_cidr" {
   description = "CIDR block for the VPC (main network address range)"
   type        = string
-  default     = "10.0.0.0/16"  # Provides 65,536 IP addresses (10.0.0.0 - 10.0.255.255)
+  default     = "10.0.0.0/16" # Provides 65,536 IP addresses (10.0.0.0 - 10.0.255.255)
 }
 
 # Private subnet CIDR blocks - where worker nodes and databases will be deployed
@@ -57,10 +57,10 @@ variable "vpc_cidr" {
 variable "private_subnets" {
   description = "Private subnet CIDR blocks (no direct internet access)"
   type        = list(string)
-  default     = [
-    "10.0.1.0/24",   # Private subnet in AZ-a (256 IPs: 10.0.1.0 - 10.0.1.255)
-    "10.0.2.0/24",   # Private subnet in AZ-b (256 IPs: 10.0.2.0 - 10.0.2.255)
-    "10.0.3.0/24"    # Private subnet in AZ-c (256 IPs: 10.0.3.0 - 10.0.3.255)
+  default = [
+    "10.0.1.0/24", # Private subnet in AZ-a (256 IPs: 10.0.1.0 - 10.0.1.255)
+    "10.0.2.0/24", # Private subnet in AZ-b (256 IPs: 10.0.2.0 - 10.0.2.255)
+    "10.0.3.0/24"  # Private subnet in AZ-c (256 IPs: 10.0.3.0 - 10.0.3.255)
   ]
 }
 
@@ -70,7 +70,7 @@ variable "private_subnets" {
 variable "public_subnets" {
   description = "Public subnet CIDR blocks (direct internet access)"
   type        = list(string)
-  default     = [
+  default = [
     "10.0.101.0/24", # Public subnet in AZ-a (256 IPs: 10.0.101.0 - 10.0.101.255)
     "10.0.102.0/24", # Public subnet in AZ-b (256 IPs: 10.0.102.0 - 10.0.102.255)
     "10.0.103.0/24"  # Public subnet in AZ-c (256 IPs: 10.0.103.0 - 10.0.103.255)
@@ -88,7 +88,7 @@ variable "public_subnets" {
 variable "aurora_min_capacity" {
   description = "Aurora Serverless V2 minimum capacity in ACUs (Aurora Capacity Units)"
   type        = number
-  default     = 0.5  # Minimum for cost-effective operation
+  default     = 0.5 # Minimum for cost-effective operation
 }
 
 # Aurora Serverless V2 maximum capacity in Aurora Capacity Units (ACUs)
@@ -97,7 +97,7 @@ variable "aurora_min_capacity" {
 variable "aurora_max_capacity" {
   description = "Aurora Serverless V2 maximum capacity in ACUs (Aurora Capacity Units)"
   type        = number
-  default     = 16  # High capacity for production workloads
+  default     = 16 # High capacity for production workloads
 }
 
 # ElastiCache Serverless maximum data storage in gigabytes
@@ -106,7 +106,7 @@ variable "aurora_max_capacity" {
 variable "redis_max_data_storage" {
   description = "ElastiCache Serverless maximum data storage capacity in GB"
   type        = number
-  default     = 20  # 20GB storage capacity
+  default     = 20 # 20GB storage capacity
 }
 
 # ElastiCache Serverless maximum ECPUs (ElastiCache Processing Units) per second
@@ -115,7 +115,7 @@ variable "redis_max_data_storage" {
 variable "redis_max_ecpu_per_second" {
   description = "ElastiCache Serverless maximum ECPUs per second (processing capacity)"
   type        = number
-  default     = 5000  # High throughput capacity
+  default     = 5000 # High throughput capacity
 }
 
 # =============================================================================
@@ -129,7 +129,7 @@ variable "redis_max_ecpu_per_second" {
 variable "domain_name" {
   description = "Custom domain name for OpenEMR (leave empty for LoadBalancer access only)"
   type        = string
-  default     = ""  # No custom domain by default
+  default     = "" # No custom domain by default
 
   # Validation ensures the domain name is either empty or a valid FQDN
   validation {
@@ -144,7 +144,7 @@ variable "domain_name" {
 variable "enable_waf" {
   description = "Enable AWS WAF for web application security (recommended for production)"
   type        = bool
-  default     = true  # Enabled by default for security
+  default     = true # Enabled by default for security
 }
 
 # Enable public endpoint access for the EKS cluster
@@ -153,7 +153,7 @@ variable "enable_waf" {
 variable "enable_public_access" {
   description = "Enable public endpoint access (disable for maximum security)"
   type        = bool
-  default     = true  # Enabled by default for ease of access
+  default     = true # Enabled by default for ease of access
 }
 
 # CIDR blocks allowed to access the EKS cluster endpoint
@@ -162,7 +162,7 @@ variable "enable_public_access" {
 variable "allowed_cidr_blocks" {
   description = "CIDR blocks allowed to access the EKS cluster endpoint (auto-detected if empty)"
   type        = list(string)
-  default     = []  # Empty list triggers auto-detection of current IP
+  default     = [] # Empty list triggers auto-detection of current IP
 }
 
 # =============================================================================
@@ -176,7 +176,7 @@ variable "allowed_cidr_blocks" {
 variable "backup_retention_days" {
   description = "Number of days to retain automated RDS Aurora backups"
   type        = number
-  default     = 30  # 30 days retention for good recovery options
+  default     = 30 # 30 days retention for good recovery options
 }
 
 # Enable deletion protection for RDS cluster
@@ -185,7 +185,7 @@ variable "backup_retention_days" {
 variable "rds_deletion_protection" {
   description = "Enable deletion protection for RDS cluster (disable for testing only)"
   type        = bool
-  default     = true  # Enabled by default for production safety
+  default     = true # Enabled by default for production safety
 }
 
 # Number of days to retain ALB (Application Load Balancer) access logs in S3
@@ -194,7 +194,7 @@ variable "rds_deletion_protection" {
 variable "alb_logs_retention_days" {
   description = "Number of days to retain ALB access logs in S3"
   type        = number
-  default     = 90  # 90 days for security analysis and compliance
+  default     = 90 # 90 days for security analysis and compliance
 }
 
 # Number of days to retain application logs in CloudWatch
@@ -203,7 +203,7 @@ variable "alb_logs_retention_days" {
 variable "app_logs_retention_days" {
   description = "Number of days to retain application logs in CloudWatch"
   type        = number
-  default     = 30  # 30 days for application troubleshooting
+  default     = 30 # 30 days for application troubleshooting
 }
 
 # Number of days to retain audit logs in CloudWatch
@@ -212,7 +212,7 @@ variable "app_logs_retention_days" {
 variable "audit_logs_retention_days" {
   description = "Number of days to retain audit logs in CloudWatch (compliance requirement)"
   type        = number
-  default     = 365  # 1 year for compliance and security monitoring
+  default     = 365 # 1 year for compliance and security monitoring
 }
 
 # =============================================================================
@@ -226,7 +226,7 @@ variable "audit_logs_retention_days" {
 variable "rds_engine_version" {
   description = "Aurora MySQL engine version (check AWS docs for available versions)"
   type        = string
-  default     = "8.0.mysql_aurora.3.10.1"  # Stable Aurora MySQL 8.0 version
+  default     = "8.0.mysql_aurora.3.10.1" # Stable Aurora MySQL 8.0 version
 }
 
 # =============================================================================
@@ -240,7 +240,7 @@ variable "rds_engine_version" {
 variable "openemr_min_replicas" {
   description = "Minimum number of OpenEMR pod replicas (recommended: 2 for HA)"
   type        = number
-  default     = 2  # 2 replicas minimum for high availability
+  default     = 2 # 2 replicas minimum for high availability
 
   # Validation ensures reasonable bounds for minimum replicas
   validation {
@@ -255,7 +255,7 @@ variable "openemr_min_replicas" {
 variable "openemr_max_replicas" {
   description = "Maximum number of OpenEMR pod replicas (adjust based on expected peak load)"
   type        = number
-  default     = 10  # 10 replicas maximum for cost-effective scaling
+  default     = 10 # 10 replicas maximum for cost-effective scaling
 
   # Validation ensures reasonable bounds for maximum replicas
   validation {
@@ -270,7 +270,7 @@ variable "openemr_max_replicas" {
 variable "openemr_cpu_utilization_threshold" {
   description = "CPU utilization percentage to trigger scaling (recommended: 60-80%)"
   type        = number
-  default     = 70  # 70% CPU threshold for responsive scaling
+  default     = 70 # 70% CPU threshold for responsive scaling
 
   # Validation ensures reasonable CPU threshold bounds
   validation {
@@ -285,7 +285,7 @@ variable "openemr_cpu_utilization_threshold" {
 variable "openemr_memory_utilization_threshold" {
   description = "Memory utilization percentage to trigger scaling (recommended: 70-85%)"
   type        = number
-  default     = 80  # 80% memory threshold for responsive scaling
+  default     = 80 # 80% memory threshold for responsive scaling
 
   # Validation ensures reasonable memory threshold bounds
   validation {
@@ -300,7 +300,7 @@ variable "openemr_memory_utilization_threshold" {
 variable "openemr_scale_down_stabilization_seconds" {
   description = "Seconds to wait before scaling down (recommended: 300-600 for healthcare workloads)"
   type        = number
-  default     = 300  # 5 minutes stabilization for healthcare workloads
+  default     = 300 # 5 minutes stabilization for healthcare workloads
 
   # Validation ensures reasonable stabilization period
   validation {
@@ -315,7 +315,7 @@ variable "openemr_scale_down_stabilization_seconds" {
 variable "openemr_scale_up_stabilization_seconds" {
   description = "Seconds to wait before scaling up (recommended: 60-120 for responsive scaling)"
   type        = number
-  default     = 60  # 1 minute stabilization for responsive scaling
+  default     = 60 # 1 minute stabilization for responsive scaling
 
   # Validation ensures reasonable stabilization period
   validation {
@@ -335,7 +335,7 @@ variable "openemr_scale_up_stabilization_seconds" {
 variable "openemr_version" {
   description = "OpenEMR Docker image version to deploy (use specific versions for production)"
   type        = string
-  default     = "7.0.3"  # Stable OpenEMR version
+  default     = "7.0.3" # Stable OpenEMR version
 
   # Validation ensures proper version format
   validation {
@@ -355,7 +355,7 @@ variable "openemr_version" {
 variable "enable_openemr_api" {
   description = "Enable OpenEMR REST API endpoints (FHIR, REST API) - SECURITY: Disable if not needed"
   type        = bool
-  default     = false  # Disabled by default for security
+  default     = false # Disabled by default for security
 }
 
 # Enable OpenEMR patient portal functionality
@@ -364,5 +364,5 @@ variable "enable_openemr_api" {
 variable "enable_patient_portal" {
   description = "Enable OpenEMR patient portal functionality - SECURITY: Disable if not needed"
   type        = bool
-  default     = false  # Disabled by default for security
+  default     = false # Disabled by default for security
 }

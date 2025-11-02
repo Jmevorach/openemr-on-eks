@@ -173,7 +173,7 @@ resource "aws_s3_bucket" "waf_logs" {
 
   # Handle existing buckets gracefully
   lifecycle {
-    ignore_changes = [bucket]
+    ignore_changes  = [bucket]
     prevent_destroy = false
   }
 
@@ -402,7 +402,7 @@ resource "aws_s3_bucket_public_access_block" "loki_storage" {
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
-  restrict_public_buckets  = true
+  restrict_public_buckets = true
 }
 
 # Loki bucket policy - allows Loki service account to read/write

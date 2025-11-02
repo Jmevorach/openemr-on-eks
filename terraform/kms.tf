@@ -17,7 +17,7 @@ locals {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action   = "kms:*"        # All KMS operations
+        Action   = "kms:*" # All KMS operations
         Resource = "*"
       },
       {
@@ -27,10 +27,10 @@ locals {
           Service = "cloudtrail.amazonaws.com"
         }
         Action = [
-          "kms:GenerateDataKey*",  # Generate data keys for encryption
-          "kms:Encrypt",           # Encrypt data
-          "kms:Decrypt",           # Decrypt data
-          "kms:DescribeKey"        # Describe key metadata
+          "kms:GenerateDataKey*", # Generate data keys for encryption
+          "kms:Encrypt",          # Encrypt data
+          "kms:Decrypt",          # Decrypt data
+          "kms:DescribeKey"       # Describe key metadata
         ]
         Resource = "*"
       },
@@ -42,11 +42,11 @@ locals {
           Service = "ec2.amazonaws.com"
         }
         Action = [
-          "kms:Encrypt",           # Encrypt data
-          "kms:Decrypt",           # Decrypt data
-          "kms:ReEncrypt*",        # Re-encrypt data with different keys
-          "kms:GenerateDataKey*",  # Generate data keys for encryption
-          "kms:DescribeKey"        # Describe key metadata
+          "kms:Encrypt",          # Encrypt data
+          "kms:Decrypt",          # Decrypt data
+          "kms:ReEncrypt*",       # Re-encrypt data with different keys
+          "kms:GenerateDataKey*", # Generate data keys for encryption
+          "kms:DescribeKey"       # Describe key metadata
         ]
         Resource = "*"
       },
@@ -129,10 +129,10 @@ resource "aws_kms_key" "efs" {
 
 # CloudWatch KMS Key - Encrypts CloudWatch log data
 resource "aws_kms_key" "cloudwatch" {
-  description             = "CloudWatch Logs Encryption"  # Key description for identification
-  deletion_window_in_days = 7                             # 7-day deletion window for safety
-  enable_key_rotation     = true                          # Enable automatic key rotation
-  policy                  = jsonencode(local.kms_policy)  # Use standard KMS policy
+  description             = "CloudWatch Logs Encryption" # Key description for identification
+  deletion_window_in_days = 7                            # 7-day deletion window for safety
+  enable_key_rotation     = true                         # Enable automatic key rotation
+  policy                  = jsonencode(local.kms_policy) # Use standard KMS policy
   tags = {
     Name = "${var.cluster_name}-cloudwatch-encryption"
   }
@@ -163,9 +163,9 @@ resource "aws_kms_key" "elasticache" {
 # S3 KMS Key - Special policy for S3 and log delivery services
 # This key has a custom policy to support S3 bucket encryption and log delivery services
 resource "aws_kms_key" "s3" {
-  description             = "S3 Encryption Key"          # Key description for identification
-  deletion_window_in_days = 7                            # 7-day deletion window for safety
-  enable_key_rotation     = true                         # Enable automatic key rotation
+  description             = "S3 Encryption Key" # Key description for identification
+  deletion_window_in_days = 7                   # 7-day deletion window for safety
+  enable_key_rotation     = true                # Enable automatic key rotation
 
   # Custom policy for S3 and log delivery services
   policy = jsonencode({
@@ -178,7 +178,7 @@ resource "aws_kms_key" "s3" {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action   = "kms:*"        # All KMS operations
+        Action   = "kms:*" # All KMS operations
         Resource = "*"
       },
       {
@@ -189,8 +189,8 @@ resource "aws_kms_key" "s3" {
           Service = "s3.amazonaws.com"
         }
         Action = [
-          "kms:Decrypt",          # Decrypt encrypted objects
-          "kms:GenerateDataKey"   # Generate data keys for new objects
+          "kms:Decrypt",        # Decrypt encrypted objects
+          "kms:GenerateDataKey" # Generate data keys for new objects
         ]
         Resource = "*"
       },
@@ -203,10 +203,10 @@ resource "aws_kms_key" "s3" {
           Service = "delivery.logs.amazonaws.com"
         }
         Action = [
-          "kms:Decrypt",          # Decrypt log data
-          "kms:GenerateDataKey",  # Generate data keys for log encryption
-          "kms:Encrypt",          # Encrypt log data
-          "kms:DescribeKey"       # Describe key metadata
+          "kms:Decrypt",         # Decrypt log data
+          "kms:GenerateDataKey", # Generate data keys for log encryption
+          "kms:Encrypt",         # Encrypt log data
+          "kms:DescribeKey"      # Describe key metadata
         ]
         Resource = "*"
         # Condition restricts access to current account and region
@@ -226,9 +226,9 @@ resource "aws_kms_key" "s3" {
           AWS = "arn:aws:iam::${data.aws_elb_service_account.main.id}:root"
         }
         Action = [
-          "kms:Decrypt",          # Decrypt data
-          "kms:GenerateDataKey",  # Generate data keys
-          "kms:DescribeKey"       # Describe key metadata
+          "kms:Decrypt",         # Decrypt data
+          "kms:GenerateDataKey", # Generate data keys
+          "kms:DescribeKey"      # Describe key metadata
         ]
         Resource = "*"
         # Condition restricts access to S3 in current region
@@ -255,28 +255,28 @@ resource "aws_kms_key" "s3" {
 # Aliases provide stable, human-readable names that can be used instead of key IDs
 
 resource "aws_kms_alias" "s3" {
-  name          = "alias/${var.cluster_name}-s3"          # Human-readable alias for S3 key
-  target_key_id = aws_kms_key.s3.key_id                   # Reference to the actual KMS key
+  name          = "alias/${var.cluster_name}-s3" # Human-readable alias for S3 key
+  target_key_id = aws_kms_key.s3.key_id          # Reference to the actual KMS key
 }
 
 resource "aws_kms_alias" "eks" {
-  name          = "alias/${var.cluster_name}-eks"         # Human-readable alias for EKS key
-  target_key_id = aws_kms_key.eks.key_id                  # Reference to the actual KMS key
+  name          = "alias/${var.cluster_name}-eks" # Human-readable alias for EKS key
+  target_key_id = aws_kms_key.eks.key_id          # Reference to the actual KMS key
 }
 
 resource "aws_kms_alias" "efs" {
-  name          = "alias/${var.cluster_name}-efs"         # Human-readable alias for EFS key
-  target_key_id = aws_kms_key.efs.key_id                  # Reference to the actual KMS key
+  name          = "alias/${var.cluster_name}-efs" # Human-readable alias for EFS key
+  target_key_id = aws_kms_key.efs.key_id          # Reference to the actual KMS key
 }
 
 resource "aws_kms_alias" "cloudwatch" {
-  name          = "alias/${var.cluster_name}-cloudwatch"  # Human-readable alias for CloudWatch key
-  target_key_id = aws_kms_key.cloudwatch.key_id           # Reference to the actual KMS key
+  name          = "alias/${var.cluster_name}-cloudwatch" # Human-readable alias for CloudWatch key
+  target_key_id = aws_kms_key.cloudwatch.key_id          # Reference to the actual KMS key
 }
 
 resource "aws_kms_alias" "rds" {
-  name          = "alias/${var.cluster_name}-rds"         # Human-readable alias for RDS key
-  target_key_id = aws_kms_key.rds.key_id                  # Reference to the actual KMS key
+  name          = "alias/${var.cluster_name}-rds" # Human-readable alias for RDS key
+  target_key_id = aws_kms_key.rds.key_id          # Reference to the actual KMS key
 }
 
 resource "aws_kms_alias" "elasticache" {
