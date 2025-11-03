@@ -210,7 +210,7 @@ This guide provides measured timing data for various operations in the OpenEMR o
 | **2. OpenEMR Deploy** | 7-11 min | Application deployment |
 | **3. Test Data** | 7-8 sec | Create proof file |
 | **4. Backup** | 30-35 sec | Full backup creation |
-| **5. Monitoring Test** | 7-8 min | Install/uninstall monitoring stack |
+| **5. Monitoring Test** | 6-7 min | Install/uninstall monitoring stack (updated Nov 2025) |
 | **6. Deletion** | 16-17 min | Destroy all infrastructure |
 | **7. Recreation** | 40-42 min | Redeploy infrastructure |
 | **8. Restore** | 38-43 min | Full restore (clean + deploy + restore data) |
@@ -220,6 +220,8 @@ This guide provides measured timing data for various operations in the OpenEMR o
 **Total Measured Duration:** 
 - Average: 160-165 minutes (with updated restore timing)
 - Range: 155-170 minutes across multiple test runs
+
+**Note:** Monitoring stack test timing updated to 6-7 minutes (from previous 7-8 min) based on November 2025 test runs with S3 storage configuration for Loki.
 
 ---
 
@@ -236,6 +238,12 @@ This guide provides measured timing data for various operations in the OpenEMR o
 | **Loki** | ~1 min | Log aggregation with S3 storage configuration |
 | **Jaeger** | ~15 sec | Distributed tracing |
 | **Total** | **~4.5 min** | Complete monitoring stack installation |
+
+**Install/Uninstall Test Timing (November 2025):**
+- **Total Test Duration**: ~6-7 minutes (includes full install + uninstall)
+- **Installation**: ~4.5 minutes (measured from script start to completion)
+- **Uninstallation**: ~1.5-2 minutes (cleanup of all components)
+- **Note:** S3 storage configuration for Loki adds minimal overhead (~30 sec for Terraform output retrieval and ServiceAccount setup)
 
 **Measured Installation Times (November 2025):**
 - **Total Stack Installation**: 258 seconds (4.30 minutes) - end-to-end from script start to completion
