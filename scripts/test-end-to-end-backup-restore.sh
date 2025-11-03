@@ -52,7 +52,8 @@
 #   30-32 min, Application deployment 7-11 min (can spike to 19 min), Backup
 #   ~30-35 sec, Monitoring stack test ~6-7 min (updated Nov 2025 with S3 storage),
 #   Infrastructure deletion 13-16 min, Infrastructure recreation 40-42 min, 
-#   Restore 38-43 min, Final cleanup 13-14 min,
+#   Restore 38-43 min, Final cleanup 13-14 min.
+#   Total: 160-165 min (2.7 hours).
 #
 # Examples:
 #   ./test-end-to-end-backup-restore.sh
