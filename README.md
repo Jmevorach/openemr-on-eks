@@ -2183,6 +2183,11 @@ Version information is centrally managed in `versions.yaml`. To configure AWS cr
 
 1. **Deploy OIDC provider** using the Terraform module in `oidc_provider/`:
    ```bash
+   cd oidc_provder/scripts
+   ./deploy.sh
+   
+   # Or ...
+   
    cd oidc_provider
    terraform init
    terraform apply
