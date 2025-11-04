@@ -88,7 +88,7 @@ After deployment, Terraform will output the IAM role ARN(s) that you can use in 
 ### Customizing the Trust Policy
 
 By default, the trust policy is scoped to:
-- Repository: `Jmevorach/openemr-on-eks`
+- Repository: `openemr/openemr-on-eks`
 - Branch: `refs/heads/main`
 
 To customize for your repository:
@@ -99,7 +99,7 @@ To customize for your repository:
 variable "github_repository" {
   description = "GitHub repository in format 'owner/repo'"
   type        = string
-  default     = "Jmevorach/openemr-on-eks"  # Change this
+  default     = "openemr/openemr-on-eks"  # Change this
 }
 
 variable "github_branch" {

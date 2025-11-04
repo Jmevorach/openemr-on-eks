@@ -26,15 +26,15 @@ variable "environment" {
 # GITHUB REPOSITORY CONFIGURATION
 # =============================================================================
 
-# GitHub repository in format 'owner/repo' (e.g., 'Jmevorach/openemr-on-eks')
+# GitHub repository in format 'owner/repo' (e.g., 'openemr/openemr-on-eks')
 variable "github_repository" {
-  description = "GitHub repository in format 'owner/repo' (e.g., 'Jmevorach/openemr-on-eks')"
+  description = "GitHub repository in format 'owner/repo' (e.g., 'openemr/openemr-on-eks')"
   type        = string
-  default     = "Jmevorach/openemr-on-eks"
+  default     = "openemr/openemr-on-eks"
 
   validation {
     condition     = can(regex("^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$", var.github_repository))
-    error_message = "GitHub repository must be in format 'owner/repo' (e.g., 'Jmevorach/openemr-on-eks')."
+    error_message = "GitHub repository must be in format 'owner/repo' (e.g., 'openemr/openemr-on-eks')."
   }
 }
 

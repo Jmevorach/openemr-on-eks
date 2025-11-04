@@ -5,7 +5,7 @@
 <!-- Status Badges -->
 [![CI/CD Tests](../../actions/workflows/ci-cd-tests.yml/badge.svg)](../../actions/workflows/ci-cd-tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../blob/main/LICENSE)
-[![Version](https://img.shields.io/github/v/release/Jmevorach/openemr-on-eks?label=version&color=blue)](../../releases)
+[![Version](https://img.shields.io/github/v/release/openemr/openemr-on-eks?label=version&color=blue)](../../releases)
 
 *This deployment provides a production-ready OpenEMR system on Amazon EKS with **EKS Auto Mode** for fully managed EC2 infrastructure with automatic provisioning, configurable autoscaling and a production-ready alerting, monitoring and observability stack.*
 
