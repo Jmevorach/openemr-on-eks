@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="images/openemr_on_eks_logo.png" alt="OpenEMR on EKS Logo" width="600">
+<img src="images/openemr_on_eks_logo.png" alt="OpenEMR on EKS Logo" width="500">
 
 <!-- Status Badges -->
 [![CI/CD Tests](../../actions/workflows/ci-cd-tests.yml/badge.svg)](../../actions/workflows/ci-cd-tests.yml)
@@ -19,59 +19,128 @@
 > - Regular security audits and risk assessments
 
 > **⚠️ End-to-End Test Warning**: The end-to-end test script (`scripts/test-end-to-end-backup-restore.sh`) will create and delete AWS resources (including backup buckets and RDS snapshots) and automatically reset Kubernetes manifests to their default state. **Only run in development AWS accounts** and commit/stash any uncommitted changes to `k8s/` manifests before testing.
-
 ---
 
-## ⚡ Quick Start 
+<div align="center">
 
-**Deploy OpenEMR with a full monitoring stack on EKS in a single command:**
+# 🚀 ⚡ Quick Start ⚡ 🚀
 
-```bash
-# Requires: aws, helm, jq, kubectl, terraform
-# Duration: ~45-60 minutes
-```
+*Deploy OpenEMR on EKS in minutes*
+
+</div> 
+
+## 📊 Deploy OpenEMR with monitoring (~45-60 min.)
 
 ```bash
 ./scripts/quick-deploy.sh
 ```
 
-**What you get:**
+<details>
+<summary><strong>What you get</strong></summary>
+
 - 🌐 OpenEMR URL and admin credentials
 - 📊 Grafana URL and admin credentials  
 - 📈 Full observability stack ready to use
 
-!["Terminal output after running quick-deploy.sh"](./images/quick-deploy.png)
+</details>
 
-**Deploy a training OpenEMR setup with 100 synthetic patients:**
+<details>
+<summary><strong>Terminal Output</strong></summary>
 
-```bash
-# Requires: aws, jq, kubectl, terraform
-# Duration: ~35-50 minutes
-```
+<img src="./images/quick-deploy.png" alt="Terminal output after running quick-deploy.sh" width="500">
+
+</details>
+
+<details>
+<summary><strong>Access OpenEMR</strong></summary>
+
+<img src="./images/quick-deploy-openemr-login.png" alt="OpenEMR login page" width="500">
+
+</details>
+
+<details>
+<summary><strong>OpenEMR Admin Dashboard</strong></summary>
+
+<img src="./images/quick-deploy-openemr-admin-landing-page.png" alt="OpenEMR admin landing page" width="500">
+
+</details>
+
+<details>
+<summary><strong>Access Grafana</strong></summary>
+
+<img src="./images/quick-deploy-grafana-login.png" alt="Grafana login page" width="500">
+
+</details>
+
+<details>
+<summary><strong>Monitor OpenEMR in Grafana</strong></summary>
+
+<img src="./images/quick-deploy-openemr-grafana.png" alt="OpenEMR monitoring dashboard in Grafana" width="500">
+
+</details>
+
+<details>
+<summary><strong>5 Integrated Datasources for Dashboarding/Alerting</strong></summary>
+
+<img src="./images/quick-deploy-openemr-grafana-datasources.png" alt="OpenEMR monitoring dashboard in Grafana" width="500">
+
+</details>
+
+## 👥 Deploy OpenEMR with 100 synthetic patients (~35-50 min.)
 
 ```bash
 ./scripts/deploy-training-openemr-setup.sh --use-default-dataset --max-records 100
 ```
 
-**What you get:**
+<details>
+<summary><strong>What you get</strong></summary>
+
 - 🌐 OpenEMR URL and admin credentials
 - 👥 Number of synthetic patients equal to the argument to "--max-records" (example above would upload 100 synthetic patients)
 - 🛜 Setup populated by synthetic patient data stored in an S3 bucket in OMOP format (default is https://registry.opendata.aws/cmsdesynpuf-omop/)
 
-!["Terminal output after running deploy-training-openemr-setup.sh"](./images/deploy-training-setup.png)
+</details>
 
-**Clean up the deployment with a single command:**
+<details>
+<summary><strong>Warp Uploads 100 Synthetic Patients in <1 minute</strong></summary>
 
-```bash
-# Requires: aws, kubectl, terraform
-# Duration: ~15-20 minutes
-```
+<img src="./images/deploy-training-setup-warp-data-upload.png" alt="Warp uploading 100 patients in <1 min." width="500">
+
+</details>
+
+<details>
+<summary><strong>Terminal Output</strong></summary>
+
+<img src="./images/deploy-training-setup.png" alt="Terminal output after running deploy-training-openemr-setup.sh" width="500">
+
+</details>
+
+<details>
+<summary><strong>Access OpenEMR</strong></summary>
+
+<img src="./images/deploy-training-setup-openemr-login.png" alt="OpenEMR login page with newly generated admin credentials" width="500">
+
+</details>
+
+<details>
+<summary><strong>Navigate to "Finder" → "Patient Finder" to see uploaded synthetic patients</strong></summary>
+
+<img src="./images/deploy-training-setup-patient-finder.png" alt="Screenshot showing synthetic patients in OpenEMR's Patient Finder" width="500">
+
+</details>
+
+## 🧹 Cleanup all deployed resources (~15-20 min.)
 
 ```bash
 ./scripts/destroy.sh
 ```
 
-!["Terminal output after running destroy.sh"](./images/destroy.png)
+<details>
+<summary><strong>Terminal Output</strong></summary>
+
+<img src="./images/destroy.png" alt="Terminal output after running destroy.sh" width="500">
+
+</details>
 
 ---
 
