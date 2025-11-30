@@ -2,22 +2,28 @@
 
 <img src="logo/warp_logo.png" alt="Warp Logo" width="300">
 
-# Warp - OpenEMR Data Upload Accelerator
+# ⚡ Warp ⚡
 
-**High-performance direct database import for OpenEMR on EKS - Database access required**
+## OpenEMR Data Upload Accelerator
+
+**High-performance direct database and file system import for OpenEMR on EKS**
 
 [![CI/CD Tests](https://github.com/openemr/openemr-on-eks/actions/workflows/ci-cd-tests.yml/badge.svg)](https://github.com/jm-openemr-dev-namespace/openemr-on-eks/actions/workflows/ci-cd-tests.yml)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue)](../warp/setup.py#L12)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue)](../warp/setup.py#L12)
 
 </div>
 
-> **⚠️ Beta Status**: Warp is currently in **beta** (version 0.1.1) and should **not be considered production-ready**. While we welcome development contributions and feedback, please use this tool with caution in non-production environments. The project is actively being developed and may undergo significant changes. **Warp will be considered production-ready upon the release of version 1.0.0.**
+> **⚠️ Beta Status**: Warp is currently in **beta** (version 0.1.2) and should **not be considered production-ready**. While we welcome development contributions and feedback, please use this tool with caution in non-production environments. The project is actively being developed and may undergo significant changes. **Warp will be considered production-ready upon the release of version 1.0.0.**
 
 <div align="center">
 
-<img src="images/warp-imports-in-openemr.png" alt="Warp imports displayed in OpenEMR" width="600">
+<img src="../images/deploy-training-setup-warp-data-upload.png" alt="Warp uploading 100 patients in under 100 minutes" width="600">
 
-*Warp imports successfully displayed in OpenEMR patient list*
+*Warp importing 100 patients to OpenEMR in <1 min.*
+
+<img src="../images/deploy-training-setup-patient-finder.png" alt="Warp uploading 100 patients in under 100 minutes" width="600">
+
+*Patients uploaded by Warp displayed in OpenEMR's Patient Finder*
 
 </div>
 
