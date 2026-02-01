@@ -2,7 +2,7 @@
 
 This comprehensive guide provides step-by-step instructions for deploying a production-ready OpenEMR system on Amazon EKS with Auto Mode.
 
-> **📌 Prerequisites**: This guide assumes you're deploying to AWS region `us-west-2` with EKS version `1.34`. Adjust accordingly for your region.
+> **📌 Prerequisites**: This guide assumes you're deploying to AWS region `us-west-2` with EKS version `1.35`. Adjust accordingly for your region.
 
 ## 📋 Table of Contents
 
@@ -397,7 +397,7 @@ environment  = "production"
 cluster_name = "openemr-eks"
 
 # Kubernetes Configuration (MUST be 1.29+ for Auto Mode)
-kubernetes_version = "1.34"
+kubernetes_version = "1.35"
 
 # OpenEMR Application Configuration
 openemr_version = "7.0.4"  # Latest stable OpenEMR version
@@ -496,7 +496,7 @@ aws eks describe-cluster --name openemr-eks \
 # Expected output:
 # {
 #    "Status": "ACTIVE",
-#    "Version": "1.34",
+#    "Version": "1.35",
 #    "ComputeConfig": {
 #        "enabled": true,
 #        "nodePools": [
@@ -932,10 +932,10 @@ Next steps:
    • Basic deployment: CloudWatch logs only
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
-     - Prometheus v80.14.4 (metrics & alerting)
+     - Prometheus v81.4.2 (metrics & alerting)
      - Grafana (dashboards with auto-discovery)
-     - Loki v6.49.0 (log aggregation with S3 storage)
-     - Tempo v1.60.0 (distributed tracing with S3 storage, microservice mode)
+     - Loki v6.51.0 (log aggregation with S3 storage)
+     - Tempo v1.61.3 (distributed tracing with S3 storage, microservice mode)
      - Mimir v6.0.5 (long-term metrics storage)
      - OTeBPF v0.3.0 (eBPF auto-instrumentation)
      - AlertManager (Slack integration support)
