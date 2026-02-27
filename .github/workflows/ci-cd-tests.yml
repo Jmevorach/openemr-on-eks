@@ -260,6 +260,16 @@ jobs:
             fi
           done
 
+      - name: Markdown lint
+        run: |
+          npm install -g markdownlint-cli
+          markdownlint '**/*.md' --config .markdownlint.json
+
+      - name: YAML lint
+        run: |
+          pip install yamllint
+          yamllint -c .yamllint .
+
   # Security scanning job - performs comprehensive security analysis with ZERO-TOLERANCE policy
   # This job runs Trivy vulnerability scanner to detect security issues, secrets,
   # and misconfigurations across the entire repository. ALL findings will fail the build.
@@ -374,8 +384,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyyaml  # Required for YAML analysis
 
-      # Step 4: Perform comprehensive code quality checks
-      # This step detects common issues that could impact security and maintainability
+      - name: Lint diagrams shell scripts
+        run: |
+          if [ -d "diagrams" ] && ls diagrams/*.sh 1>/dev/null 2>&1; then
+            echo "Running shellcheck on diagrams/ scripts..."
+            shellcheck diagrams/*.sh
+          else
+            echo "No shell scripts found in diagrams/ — skipping"
+          fi
+
       - name: Check for common issues
         run: |
           echo "Checking for common code quality issues..."
@@ -405,7 +422,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Run if manually triggered with 'all' or 'warp', or on push/PR (workflow paths filter handles file detection)
     if: |
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'warp')) ||
       github.event_name != 'workflow_dispatch'
 
@@ -507,7 +524,7 @@ jobs:
     name: Credential Rotation CI
     runs-on: ubuntu-24.04
     if: |
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'credential_rotation')) ||
       github.event_name != 'workflow_dispatch'
 

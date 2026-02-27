@@ -3,9 +3,63 @@
 <img src="images/openemr_on_eks_logo.png" alt="OpenEMR on EKS Logo" width="500">
 
 <!-- Status Badges -->
-[![CI/CD Tests](../../actions/workflows/ci-cd-tests.yml/badge.svg)](../../actions/workflows/ci-cd-tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../blob/main/LICENSE)
-[![Version](https://img.shields.io/github/v/release/openemr/openemr-on-eks?label=version&color=blue)](../../releases)
+<p>
+  <a href="../../blob/main/LICENSE"><img src="https://img.shields.io/github/license/openemr/openemr-on-eks?style=flat" alt="License"></a>
+  <a href="../../releases"><img src="https://img.shields.io/github/v/release/openemr/openemr-on-eks?label=version&color=blue&style=flat" alt="Version"></a>
+  <a href="https://hub.docker.com/r/openemr/openemr/tags"><img src="https://img.shields.io/badge/OpenEMR-8.0.0-green?style=flat&logo=docker&logoColor=white" alt="OpenEMR"></a>
+</p>
+
+<table>
+<tr>
+<td><strong>Tests</strong></td>
+<td>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-cd-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-cd-tests.yml?branch=main&style=flat&label=CI%2FCD%20Tests&logo=githubactions&logoColor=white" alt="CI/CD Tests"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-contract-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-contract-tests.yml?branch=main&style=flat&label=Contract%20%26%20BATS%20Tests&logo=gnubash&logoColor=white" alt="Contract &amp; BATS Tests"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/console-ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/console-ci.yml?branch=main&style=flat&label=Console%20CI&logo=go&logoColor=white" alt="Console CI"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-cd-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-cd-tests.yml?branch=main&style=flat&label=Warp%20Tests&logo=pytest&logoColor=white" alt="Warp Tests"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-cd-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-cd-tests.yml?branch=main&style=flat&label=Credential%20Rotation%20Tests&logo=pytest&logoColor=white" alt="Credential Rotation Tests"></a>
+</td>
+</tr>
+<tr>
+<td><strong>Infra</strong></td>
+<td>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-contract-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-contract-tests.yml?branch=main&style=flat&label=Terraform%20Validate&logo=terraform&logoColor=white" alt="Terraform Validate"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-contract-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-contract-tests.yml?branch=main&style=flat&label=K8s%20Schema%20Validate&logo=kubernetes&logoColor=white" alt="K8s Schema Validate"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/monthly-version-check.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/monthly-version-check.yml?branch=main&style=flat&label=Version%20Audit" alt="Version Audit"></a>
+</td>
+</tr>
+<tr>
+<td><strong>Quality</strong></td>
+<td>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/ci-cd-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/ci-cd-tests.yml?branch=main&style=flat&label=Python%20Quality&logo=python&logoColor=white" alt="Python Quality"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/console-ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/console-ci.yml?branch=main&style=flat&label=Go%20Quality&logo=go&logoColor=white" alt="Go Quality"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/security-comprehensive.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/security-comprehensive.yml?branch=main&style=flat&label=ShellCheck&logo=gnubash&logoColor=white" alt="ShellCheck"></a>
+</td>
+</tr>
+<tr>
+<td><strong>Security</strong></td>
+<td>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/security-comprehensive.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/security-comprehensive.yml?branch=main&style=flat&label=Trivy%20Scan&logo=aqua&logoColor=white" alt="Trivy Scan"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/security-comprehensive.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/security-comprehensive.yml?branch=main&style=flat&label=Checkov%20IaC&logo=paloaltonetworks&logoColor=white" alt="Checkov IaC"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/security-comprehensive.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/security-comprehensive.yml?branch=main&style=flat&label=Bandit%20SAST&logo=python&logoColor=white" alt="Bandit SAST"></a>
+  <a href="https://github.com/openemr/openemr-on-eks/actions/workflows/security-comprehensive.yml"><img src="https://img.shields.io/github/actions/workflow/status/openemr/openemr-on-eks/security-comprehensive.yml?branch=main&style=flat&label=gosec&logo=go&logoColor=white" alt="gosec"></a>
+  <img src="https://img.shields.io/badge/KMS-encryption%20at%20rest-8A2BE2?style=flat&logo=amazonaws" alt="KMS Encryption">
+  <img src="https://img.shields.io/badge/HTTPS%2FTLS-encryption%20in%20transit-8A2BE2?style=flat&logo=letsencrypt&logoColor=white" alt="HTTPS/TLS">
+</td>
+</tr>
+<tr>
+<td><strong>Stack</strong></td>
+<td>
+  <img src="https://img.shields.io/badge/Python-3.14-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/Terraform-1.14.5-7B42BC?style=flat&logo=terraform&logoColor=white" alt="Terraform">
+  <img src="https://img.shields.io/badge/EKS-Auto%20Mode-FF9900?style=flat&logo=amazoneks&logoColor=white" alt="EKS Auto Mode">
+  <img src="https://img.shields.io/badge/Kubernetes-1.35-326CE5?style=flat&logo=kubernetes&logoColor=white" alt="Kubernetes">
+  <img src="https://img.shields.io/badge/Aurora-MySQL%208.0-4479A1?style=flat&logo=mysql&logoColor=white" alt="Aurora MySQL">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker">
+</td>
+</tr>
+</table>
 
 *This deployment provides a production-ready OpenEMR system on Amazon EKS with **EKS Auto Mode** for fully managed EC2 infrastructure with automatic provisioning, configurable autoscaling and a production-ready alerting, monitoring and observability stack.*
 
@@ -29,7 +83,7 @@
 
 *Deploy OpenEMR on EKS in minutes*
 
-</div> 
+</div>
 
 ## 📊 Deploy OpenEMR with monitoring (~45-60 min.)
 
@@ -326,6 +380,8 @@ Launch an intuitive Terminal User Interface (TUI) to manage your OpenEMR deploym
 
 ## Architecture Overview
 
+The conceptual diagram below shows the logical grouping of services. For the full resource-level diagram generated from Terraform, see the [detailed architecture diagram](#detailed-architecture-diagram).
+
 ```mermaid
 graph TB
     subgraph "AWS Cloud"
@@ -369,6 +425,14 @@ graph TB
     SG --> OP
     NP --> OP
 ```
+
+### Detailed Architecture Diagram
+
+The diagram below is auto-generated from the Terraform source code using [Terravision](https://github.com/patrickchugh/terravision). It shows every AWS resource that `terraform plan` would create, including VPC subnets, security groups, IAM roles, KMS keys, S3 buckets, and their relationships. To regenerate it after Terraform changes, run `./diagrams/generate.sh`.
+
+<p align="center">
+  <img src="diagrams/architecture.png" alt="OpenEMR on EKS — Detailed Architecture (generated from Terraform)" width="900">
+</p>
 
 ### **EKS Auto Mode Architecture**
 
@@ -918,6 +982,8 @@ openemr-on-eks/
 │   ├── README.md                          # Comprehensive GitHub workflows documentation
 │   └── workflows/                         # CI/CD automation workflows
 │       ├── ci-cd-tests.yml                # Automated testing and quality assurance (includes Warp CI/CD)
+│       ├── ci-contract-tests.yml          # Contract, BATS, Terraform & K8s schema validation
+│       ├── console-ci.yml                 # Go TUI console build, lint, and security scanning
 │       ├── security-comprehensive.yml     # Comprehensive security scanning (Trivy, Checkov, KICS, etc.)
 │       ├── manual-releases.yml            # Manual release workflow for version management
 │       └── monthly-version-check.yml      # Automated version awareness checking
@@ -1031,6 +1097,10 @@ openemr-on-eks/
 │   ├── go.mod                             # Go module dependencies
 │   ├── go.sum                             # Go module checksums
 │   └── Makefile                           # Build and run commands for console
+├── diagrams/                              # Architecture diagram generation (diagram-as-code)
+│   ├── generate.sh                        # Terravision wrapper — generates diagram from Terraform
+│   ├── architecture.png                   # Generated architecture diagram (committed for README)
+│   └── README.md                          # Diagram generation guide, prerequisites, troubleshooting
 ├── tests/                                 # BATS test suite and test infrastructure
 │   ├── README.md                          # Test documentation, design standards, and coverage summary
 │   └── bats/                              # BATS test files and shared helpers
@@ -1534,7 +1604,7 @@ cd scripts && ./destroy.sh [--force]
 ```
 
 **Purpose:** Complete and bulletproof destruction of all OpenEMR infrastructure
-**Features:** 
+**Features:**
 - Disables RDS deletion protection automatically
 - Deletes all snapshots to prevent automatic restoration
 - Cleans up orphaned resources (security groups, load balancers, WAF)
@@ -1542,7 +1612,7 @@ cd scripts && ./destroy.sh [--force]
 - Terraform destroy with retry logic
 - Verification of complete cleanup
 
-**When to use:** 
+**When to use:**
 - Complete infrastructure teardown
 - Development environment cleanup
 - End-to-end testing preparation
