@@ -440,7 +440,11 @@ validate_arguments() {
     if [ -z "$SNAPSHOT_ID" ]; then
         if [ "$USE_LATEST_SNAPSHOT" = "true" ]; then
             echo -e "${YELLOW}🔍 Auto-detecting latest snapshot...${NC}"
-            auto_detect_latest_snapshot
+            if ! auto_detect_latest_snapshot; then
+                echo -e "${RED}❌ Failed to auto-detect latest snapshot. Please provide a snapshot ID explicitly.${NC}" >&2
+                echo -e "${YELLOW}💡 This can also occur if AWS credentials are missing, expired, or lack the required permissions.${NC}" >&2
+                exit 1
+            fi
         else
             echo -e "${RED}❌ Snapshot ID is required${NC}" >&2
             echo -e "${YELLOW}💡 Tip: You can use --latest-snapshot to automatically use the most recent snapshot${NC}" >&2
@@ -1519,7 +1523,7 @@ restore_rds_cluster_from_snapshot() {
     # Get configuration from Terraform
     local db_subnet_group_name vpc_security_group_ids engine_version
     db_subnet_group_name=$(terraform_with_retry output -raw aurora_db_subnet_group_name 2>/dev/null || echo "")
-    engine_version=$(terraform_with_retry output -raw aurora_engine_version 2>/dev/null || echo "8.0.mysql_aurora.3.11.1")
+    engine_version=$(terraform_with_retry output -raw aurora_engine_version 2>/dev/null || echo "8.0.mysql_aurora.3.12.0")
     
     # Log the engine version being used
     echo -e "${BLUE}   Using engine version: $engine_version${NC}"
