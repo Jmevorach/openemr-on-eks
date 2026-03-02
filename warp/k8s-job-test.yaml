@@ -27,6 +27,11 @@ spec:
         # To use a specific version, replace with: python:3.14-slim
         image: python:3.14-slim
         workingDir: /app
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          seccompProfile:
+            type: RuntimeDefault
 
         env:
         # Database connection (from Kubernetes secrets)
