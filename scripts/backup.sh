@@ -1121,8 +1121,10 @@ if [ -n "$AURORA_CLUSTER_ID" ]; then
 fi
 
 METADATA_FILE="backup-metadata-${TIMESTAMP}.json"
+OPENEMR_VERSION=$(cd "$TERRAFORM_DIR" && terraform output -json 2>/dev/null | jq -r '.openemr_app_config.value.version // "8.1.1"' 2>/dev/null || echo "8.1.1")
 cat > "$METADATA_FILE" << EOF
 {
+    "manifest_version": 2,
     "backup_id": "${BACKUP_ID}",
     "timestamp": "${TIMESTAMP}",
     "source_region": "${AWS_REGION}",
@@ -1130,6 +1132,7 @@ cat > "$METADATA_FILE" << EOF
     "cluster_name": "${CLUSTER_NAME}",
     "namespace": "${NAMESPACE}",
     "backup_bucket": "${BACKUP_BUCKET}",
+    "openemr_version": "${OPENEMR_VERSION}",
     "aurora_cluster_id": "${AURORA_CLUSTER_ID:-"none"}",
     "aurora_snapshot_id": "${SNAPSHOT_ID:-"none"}",
     "backup_success": ${BACKUP_SUCCESS},
@@ -1142,8 +1145,17 @@ cat > "$METADATA_FILE" << EOF
         "kubernetes_config": true,
         "application_data": true
     },
+    "restore_plan": {
+        "backup_bucket": "${BACKUP_BUCKET}",
+        "snapshot_id": "${SNAPSHOT_ID:-none}",
+        "app_data_key": "application-data/${APP_BACKUP_FILE:-app-data-backup-${TIMESTAMP}.tar.gz}",
+        "openemr_version": "${OPENEMR_VERSION}",
+        "backup_strategy": "${BACKUP_STRATEGY}",
+        "backup_region": "${BACKUP_REGION}",
+        "kms_key_id": "${KMS_KEY_ID:-auto-detected}"
+    },
     "database_config": $DB_CONFIG,
-    "restore_command": "./restore.sh ${BACKUP_BUCKET} ${SNAPSHOT_ID:-none} ${BACKUP_REGION}",
+    "restore_command": "./restore.sh --from-metadata s3://${BACKUP_BUCKET}/metadata/backup-metadata-${TIMESTAMP}.json",
     "created_by": "$(aws sts get-caller-identity --query Arn --output text)",
     "aws_account": "$(aws sts get-caller-identity --query Account --output text)"
 }

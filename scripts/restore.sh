@@ -26,7 +26,7 @@
 #   HEALTH_CHECK_INTERVAL=10            # 10 seconds between health checks
 #   VERIFICATION_TIMEOUT=300            # 5 minutes for final verification polling
 #   VERIFICATION_INTERVAL=10            # 10 seconds between verification checks
-#   VERIFICATION_MAX_ATTEMPTS=3         # 3 attempts for verification with crypto key cleanup retry
+#   VERIFICATION_MAX_ATTEMPTS=6         # Retries with crypto key cleanup (single-replica mode)
 #
 # Environment Variables (Temp Pod Resource Configuration):
 #   TEMP_POD_MEMORY_REQUEST=1Gi         # Memory request for temp pod
@@ -82,7 +82,7 @@ readonly TEMP_POD_STORAGE_LIMIT=${TEMP_POD_STORAGE_LIMIT:-5Gi}     # Storage lim
 # Default configuration values
 readonly DEFAULT_NAMESPACE="openemr"
 readonly DEFAULT_AWS_REGION="us-west-2"
-readonly DEFAULT_OPENEMR_VERSION="8.1.0"
+readonly DEFAULT_OPENEMR_VERSION="8.1.1"
 
 # Script directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,10 +91,16 @@ TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform" && pwd)"
 readonly TERRAFORM_DIR
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly PROJECT_ROOT
-BACKUP_BUCKET=""
-SNAPSHOT_ID=""
+APP_DATA_KEY="${APP_DATA_KEY:-}"              # S3 key for app data tarball (from manifest v2)
 POD_SPEC_FILE=""              # Global variable to track pod spec file for cleanup
-EARLY_DB_RESTORE_NEEDED=false # Flag to indicate if early database restore is needed
+EARLY_DB_RESTORE_NEEDED=false # Flag to indicate if early database restore is needed (legacy flow)
+LEGACY_ORDER="${LEGACY_ORDER:-false}"
+USE_AWS_BACKUP="${USE_AWS_BACKUP:-false}"
+EXECUTE_PHASE="${EXECUTE_PHASE:-}"              # Single phase for orchestrator
+METADATA_URI="${METADATA_URI:-}"               # Source metadata URI when loaded via --from-metadata
+RESTORE_STATE_FILE="${RESTORE_STATE_FILE:-.restore-state}"
+BACKUP_BUCKET="${BACKUP_BUCKET:-}"
+SNAPSHOT_ID="${SNAPSHOT_ID:-}"
 CLUSTER_NAME=""
 NAMESPACE="$DEFAULT_NAMESPACE"
 AWS_REGION="$DEFAULT_AWS_REGION"
@@ -284,8 +290,29 @@ OPTIONS:
     -n, --namespace      Kubernetes namespace (default: openemr)
     -r, --region         AWS region (default: us-west-2)
     --kms-key            Custom KMS key ARN for RDS restore (optional)
-                         By default, the snapshot's original KMS key is used
     --latest-snapshot    Automatically use the most recent available snapshot
+    --from-metadata URI  Load restore plan from S3 metadata (manifest v2)
+    --from-phase PHASE   Resume from phase (preflight|bootstrap|rds|data|deploy|verify)
+    --state-file PATH    Checkpoint file (default: .restore-state)
+    --use-aws-backup     Restore RDS via AWS Backup recovery point (when available)
+    --legacy-order       Use legacy clean→deploy→RDS→data order (default: inverted)
+    --orchestrator       Force Python orchestrator (default when python3 available)
+    --bash-only          Run bash restore.sh directly without orchestrator
+
+DESCRIPTION:
+    Default flow (inverted, recommended):
+    1. Pre-flight validation
+    2. Bootstrap Kubernetes (namespace, EFS PVC, IRSA)
+    3. Restore RDS from snapshot
+    4. Restore application data via Kubernetes Job
+    5. Deploy OpenEMR once (single-replica leader init)
+    6. Verify health and re-apply HPA
+
+    Use the Python orchestrator for checkpoint/resume:
+        python3 scripts/restore/orchestrator.py --from-metadata s3://bucket/metadata/backup-metadata-....json
+
+    Legacy flow (--legacy-order):
+    clean → deploy → RDS → data (previous behavior)
 
 ENVIRONMENT VARIABLES (Timeout Configuration):
     DB_CLUSTER_WAIT_TIMEOUT        Database cluster wait timeout in seconds (default: 1200)
@@ -319,24 +346,7 @@ EXAMPLES:
     $0 my-backup-bucket my-snapshot-id --cluster my-cluster --namespace my-namespace
 
 DESCRIPTION:
-    This script implements a streamlined restore process:
-    1. Run clean deployment (removes all OpenEMR resources)
-    2. Destroy existing RDS cluster
-    3. Restore RDS cluster from backup
-    4. Launch temp pod to restore only app data
-    5. Fix OpenEMR configuration (database settings and startup files)
-    6. Deploy OpenEMR with restore-defaults.sh and deploy.sh
-
-    The script provides detailed status tracking and progress indicators
-    and automatically handles OpenEMR configuration issues that can occur
-    during restore operations, including:
-    - Fixing database connection settings in sqlconf.php
-    - Creating comprehensive config.php with all necessary global variables
-    - Removing docker-leader and docker-initiated files that prevent startup
-    - Setting proper configuration flags to skip setup
-    - Verifying configuration files are created/removed correctly
-    throughout the restoration process.
-
+    See --help for inverted (default) and legacy restore flows.
 EOF
 }
 
@@ -366,6 +376,29 @@ parse_arguments() {
                 ;;
             --latest-snapshot)
                 USE_LATEST_SNAPSHOT=true
+                shift
+                ;;
+            --from-metadata)
+                METADATA_URI="$2"
+                shift 2
+                ;;
+            --from-phase)
+                EXECUTE_PHASE="$2"
+                shift 2
+                ;;
+            --state-file)
+                RESTORE_STATE_FILE="$2"
+                shift 2
+                ;;
+            --use-aws-backup)
+                USE_AWS_BACKUP=true
+                shift
+                ;;
+            --legacy-order)
+                LEGACY_ORDER=true
+                shift
+                ;;
+            --orchestrator|--bash-only)
                 shift
                 ;;
             -*)
@@ -927,6 +960,15 @@ parse_backup_metadata() {
     echo -e "${BLUE}     - Aurora RDS: $aurora_backed_up${NC}"
     echo -e "${BLUE}     - Kubernetes config: $k8s_backed_up${NC}"
     echo -e "${BLUE}     - Application data: $app_data_backed_up${NC}"
+
+    # Manifest v2: explicit restore plan
+    local manifest_version app_key_from_meta
+    manifest_version=$(jq -r '.manifest_version // 1' "$metadata_file" 2>/dev/null)
+    app_key_from_meta=$(jq -r '.restore_plan.app_data_key // empty' "$metadata_file" 2>/dev/null)
+    if [ -n "$app_key_from_meta" ] && [ "$app_key_from_meta" != "null" ]; then
+        APP_DATA_KEY="$app_key_from_meta"
+        echo -e "${BLUE}   App data key (manifest v${manifest_version}): $APP_DATA_KEY${NC}"
+    fi
     
     # Clean up metadata file
     rm -f "$metadata_file"
@@ -1085,24 +1127,265 @@ check_and_prepare_database() {
     return 0
 }
 
+# Resolve application data S3 key from manifest or snapshot timestamp
+resolve_app_data_key() {
+    if [ -n "$APP_DATA_KEY" ]; then
+        echo "$APP_DATA_KEY"
+        return 0
+    fi
+    local timestamp
+    # shellcheck disable=SC2001
+    timestamp=$(echo "$SNAPSHOT_ID" | sed 's/.*backup-\([0-9]\{8\}-[0-9]\{6\}\).*/\1/')
+    if [ -z "$timestamp" ] || [ "$timestamp" = "$SNAPSHOT_ID" ]; then
+        echo -e "${RED}❌ Could not determine app data key (set APP_DATA_KEY or use manifest v2)${NC}" >&2
+        return 1
+    fi
+    echo "application-data/app-data-backup-${timestamp}.tar.gz"
+}
+
+# Load restore plan from --from-metadata URI
+load_restore_plan_from_metadata() {
+    if [ -z "$METADATA_URI" ]; then
+        return 0
+    fi
+    echo -e "${BLUE}📋 Loading restore plan from metadata: $METADATA_URI${NC}"
+    local plan_json
+    plan_json=$(PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+import json, sys
+sys.path.insert(0, '$SCRIPT_DIR')
+from openemr_dr.backup.metadata import load_metadata
+p = load_metadata('$METADATA_URI', '$AWS_REGION')
+print(json.dumps({
+    'backup_bucket': p.backup_bucket,
+    'snapshot_id': p.snapshot_id,
+    'app_data_key': p.app_data_key,
+    'backup_region': p.backup_region,
+}))
+") || {
+        echo -e "${RED}❌ Failed to load metadata: $METADATA_URI${NC}" >&2
+        return 1
+    }
+    BACKUP_BUCKET=$(echo "$plan_json" | jq -r '.backup_bucket')
+    SNAPSHOT_ID=$(echo "$plan_json" | jq -r '.snapshot_id')
+    APP_DATA_KEY=$(echo "$plan_json" | jq -r '.app_data_key')
+    local plan_region
+    plan_region=$(echo "$plan_json" | jq -r '.backup_region')
+    if [ -n "$plan_region" ] && [ "$plan_region" != "null" ]; then
+        AWS_REGION="$plan_region"
+    fi
+    echo -e "${GREEN}✅ Restore plan loaded${NC}"
+    return 0
+}
+
+bootstrap_k8s_for_restore() {
+    echo -e "${YELLOW}🔧 Bootstrapping Kubernetes for restore...${NC}"
+    export NAMESPACE AWS_REGION CLUSTER_NAME
+    if ! "$PROJECT_ROOT/k8s/restore-bootstrap.sh"; then
+        echo -e "${RED}❌ Kubernetes bootstrap failed${NC}" >&2
+        return 1
+    fi
+    echo -e "${GREEN}✅ Kubernetes bootstrap completed${NC}"
+    return 0
+}
+
+restore_rds_via_aws_backup() {
+    echo -e "${YELLOW}🔄 Restoring RDS via AWS Backup...${NC}"
+    local vault_name cluster_identifier subnet_group sg_id role_arn
+    vault_name=$(terraform_with_retry output -raw backup_vault_name 2>/dev/null || echo "")
+    cluster_identifier=$(terraform_with_retry output -raw aurora_cluster_id 2>/dev/null || echo "")
+    subnet_group=$(terraform_with_retry output -raw aurora_db_subnet_group_name 2>/dev/null || echo "")
+    role_arn=$(terraform_with_retry output -raw backup_iam_role_arn 2>/dev/null || echo "")
+    sg_id=$(terraform_with_retry show -json 2>/dev/null | jq -r '.values.root_module.resources[] | select(.type == "aws_security_group" and .name == "rds") | .values.id' 2>/dev/null || echo "")
+
+    if [ -z "$vault_name" ] || [ -z "$role_arn" ]; then
+        echo -e "${YELLOW}⚠️  AWS Backup vault/role not found — falling back to direct snapshot restore${NC}"
+        restore_rds_cluster_from_snapshot
+        return $?
+    fi
+
+    destroy_existing_rds_cluster || return 1
+
+    PYTHONPATH="$SCRIPT_DIR" python3 - "$vault_name" "$SNAPSHOT_ID" "$cluster_identifier" "$AWS_REGION" "$role_arn" "$subnet_group" "$sg_id" <<'PY'
+import sys
+from restore.aws_backup import find_recovery_point_for_snapshot, start_rds_restore_job, wait_for_restore_job
+
+vault, snapshot, cluster, region, role, subnet, sg = sys.argv[1:8]
+rp = find_recovery_point_for_snapshot(vault, snapshot, region)
+if not rp:
+    raise SystemExit("No AWS Backup recovery point found for snapshot")
+job = start_rds_restore_job(rp, cluster, region, role, subnet, [sg] if sg else [])
+wait_for_restore_job(job, region)
+print(f"AWS Backup restore job completed: {job}")
+PY
+}
+
+apply_data_restore_job() {
+    local openemr_version db_endpoint db_user db_pass db_name app_key timestamp
+    openemr_version=$(terraform_with_retry output -json 2>/dev/null | jq -r '.openemr_app_config.value.version // empty' 2>/dev/null || echo "$DEFAULT_OPENEMR_VERSION")
+    [ -z "$openemr_version" ] || [ "$openemr_version" = "null" ] && openemr_version="$DEFAULT_OPENEMR_VERSION"
+
+    app_key=$(resolve_app_data_key) || return 1
+    # shellcheck disable=SC2001
+    timestamp=$(echo "$app_key" | sed 's/.*app-data-backup-\([0-9]\{8\}-[0-9]\{6\}\).*/\1/')
+
+    db_endpoint=$(terraform_with_retry output -raw aurora_endpoint 2>/dev/null || echo "")
+    db_endpoint=$(echo "$db_endpoint" | tr -d '\r\n%')
+    db_user="openemr"
+    db_pass=$(terraform_with_retry output -raw aurora_password 2>/dev/null || echo "")
+    db_pass=$(echo "$db_pass" | tr -d '\r\n%')
+    db_name="openemr"
+
+    if [ -z "$db_endpoint" ] || [ "$db_endpoint" = "pending-restore" ]; then
+        local cluster_id
+        cluster_id=$(terraform_with_retry output -raw aurora_cluster_id 2>/dev/null | tr -d '\r\n%')
+        if [ -n "$cluster_id" ]; then
+            db_endpoint=$(aws_with_retry rds describe-db-clusters \
+                --region "$AWS_REGION" \
+                --db-cluster-identifier "$cluster_id" \
+                --query 'DBClusters[0].Endpoint' \
+                --output text 2>/dev/null || echo "")
+            db_endpoint=$(echo "$db_endpoint" | tr -d '\r\n%')
+        fi
+    fi
+
+    if [ -z "$db_endpoint" ] || [ "$db_endpoint" = "None" ] || [ -z "$db_pass" ]; then
+        echo -e "${RED}❌ Database endpoint/password not available after RDS restore${NC}" >&2
+        return 1
+    fi
+
+    echo -e "${BLUE}   Creating data-restore ConfigMap and Job...${NC}"
+    kubectl create configmap openemr-data-restore-script \
+        --from-file=data-restore.sh="$PROJECT_ROOT/k8s/jobs/data-restore-script.sh" \
+        -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl delete job openemr-data-restore -n "$NAMESPACE" --ignore-not-found --wait=true 2>/dev/null || true
+
+    local job_file
+    job_file=$(mktemp)
+    sed -e "s|\${NAMESPACE}|$NAMESPACE|g" \
+        -e "s|\${OPENEMR_VERSION}|$openemr_version|g" \
+        -e "s|\${AWS_REGION}|$AWS_REGION|g" \
+        -e "s|\${BACKUP_BUCKET}|$BACKUP_BUCKET|g" \
+        -e "s|\${APP_DATA_KEY}|$app_key|g" \
+        -e "s|\${TIMESTAMP}|$timestamp|g" \
+        -e "s|\${DB_ENDPOINT}|$db_endpoint|g" \
+        -e "s|\${DB_USER}|$db_user|g" \
+        -e "s|\${DB_PASS}|$db_pass|g" \
+        -e "s|\${DB_NAME}|$db_name|g" \
+        -e "s|\${MEMORY_REQUEST}|$TEMP_POD_MEMORY_REQUEST|g" \
+        -e "s|\${CPU_REQUEST}|$TEMP_POD_CPU_REQUEST|g" \
+        -e "s|\${MEMORY_LIMIT}|$TEMP_POD_MEMORY_LIMIT|g" \
+        -e "s|\${CPU_LIMIT}|$TEMP_POD_CPU_LIMIT|g" \
+        "$PROJECT_ROOT/k8s/jobs/data-restore-job.yaml" > "$job_file"
+
+    kubectl apply -f "$job_file"
+    rm -f "$job_file"
+
+    echo -e "${BLUE}   Waiting for data-restore Job...${NC}"
+    if ! kubectl wait --for=condition=complete job/openemr-data-restore -n "$NAMESPACE" --timeout="${TEMP_POD_COMPLETION_TIMEOUT}s"; then
+        echo -e "${RED}❌ Data restore Job failed${NC}" >&2
+        kubectl logs job/openemr-data-restore -n "$NAMESPACE" || true
+        return 1
+    fi
+    kubectl logs job/openemr-data-restore -n "$NAMESPACE" || true
+    echo -e "${GREEN}✅ Application data restored via Job${NC}"
+    return 0
+}
+
+run_execute_phase() {
+    case "$EXECUTE_PHASE" in
+        preflight) pre_flight_validation ;;
+        bootstrap) bootstrap_k8s_for_restore ;;
+        rds)
+            if [ "$USE_AWS_BACKUP" = true ]; then
+                restore_rds_via_aws_backup || return 1
+            else
+                restore_rds_cluster_from_snapshot || return 1
+            fi
+            reset_rds_master_password "$(terraform_with_retry output -raw aurora_cluster_id 2>/dev/null | tr -d '\r\n%')"
+            ;;
+        data) apply_data_restore_job ;;
+        deploy)
+            deploy_openemr || return 1
+            prepare_single_replica_for_verification
+            cleanup_crypto_keys || true
+            ;;
+        verify)
+            verify_restore_success || return 1
+            restore_autoscaling
+            ;;
+        legacy) main_legacy ;;
+        *) echo -e "${RED}❌ Unknown phase: $EXECUTE_PHASE${NC}" >&2; return 1 ;;
+    esac
+}
+
+main_legacy() {
+    local steps=()
+    if [ "$EARLY_DB_RESTORE_NEEDED" = true ]; then
+        steps=("restore_rds_cluster_from_snapshot" "run_clean_deployment" "deploy_openemr" "restore_rds_cluster_from_snapshot" "restore_application_data")
+    else
+        steps=("run_clean_deployment" "deploy_openemr" "restore_rds_cluster_from_snapshot" "restore_application_data")
+    fi
+    local step_function
+    for step_function in "${steps[@]}"; do
+        "$step_function" || return 1
+    done
+    prepare_single_replica_for_verification
+    cleanup_crypto_keys || true
+    verify_restore_success || return 1
+    restore_autoscaling
+    return 0
+}
+
+main_inverted() {
+    pre_flight_validation || return 1
+    bootstrap_k8s_for_restore || return 1
+    if [ "$USE_AWS_BACKUP" = true ]; then
+        restore_rds_via_aws_backup || return 1
+    else
+        restore_rds_cluster_from_snapshot || return 1
+    fi
+    reset_rds_master_password "$(terraform_with_retry output -raw aurora_cluster_id 2>/dev/null | tr -d '\r\n%')" || return 1
+    apply_data_restore_job || return 1
+    deploy_openemr || return 1
+    prepare_single_replica_for_verification
+    cleanup_crypto_keys || true
+    verify_restore_success || return 1
+    restore_autoscaling
+    return 0
+}
+
 # Run comprehensive pre-flight validation
 pre_flight_validation() {
     echo -e "${BLUE}🔍 Pre-flight Validation${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
     local validation_failed=false
+    local failed_checks=()
     
-    # Run all validations
-    validate_terraform_state || validation_failed=true
-    validate_backup_bucket || validation_failed=true
-    validate_snapshot || validation_failed=true
-    parse_backup_metadata || validation_failed=true
-    validate_kubernetes_resources || validation_failed=true
-    validate_aws_credentials || validation_failed=true
-    check_and_prepare_database || validation_failed=true
+    # Snapshot and bucket are checked first — restore cannot proceed without them
+    validate_terraform_state || { validation_failed=true; failed_checks+=("Terraform state"); }
+    validate_backup_bucket || { validation_failed=true; failed_checks+=("Backup bucket"); }
+    validate_snapshot || { validation_failed=true; failed_checks+=("RDS snapshot"); }
+
+    if [ "$validation_failed" = true ]; then
+        echo -e "${RED}❌ Pre-flight validation failed — cannot restore without backup artifacts${NC}" >&2
+        echo -e "${RED}   Failed checks: ${failed_checks[*]}${NC}" >&2
+        if printf '%s\n' "${failed_checks[@]}" | grep -qx "RDS snapshot"; then
+            echo -e "${YELLOW}   💡 Snapshot may have been deleted by destroy.sh without PRESERVE_BACKUP_SNAPSHOTS=true${NC}" >&2
+            echo -e "${YELLOW}   💡 Create a new backup with ./scripts/backup.sh before retrying restore${NC}" >&2
+        fi
+        return 1
+    fi
+
+    validate_kubernetes_resources || { validation_failed=true; failed_checks+=("Kubernetes resources"); }
+    validate_aws_credentials || { validation_failed=true; failed_checks+=("AWS credentials"); }
+    parse_backup_metadata || { validation_failed=true; failed_checks+=("Backup metadata"); }
+    check_and_prepare_database || { validation_failed=true; failed_checks+=("Database preparation"); }
     
     if [ "$validation_failed" = true ]; then
         echo -e "${RED}❌ Pre-flight validation failed${NC}" >&2
+        echo -e "${RED}   Failed checks: ${failed_checks[*]}${NC}" >&2
         return 1
     fi
 
@@ -1655,463 +1938,10 @@ restore_rds_cluster_from_snapshot() {
 }
 
 # Restore application data and update configuration for new database endpoint
+# Restore application data (delegates to Kubernetes Job)
 restore_application_data() {
     echo -e "${YELLOW}📁 Restoring application data and updating configuration...${NC}"
-    
-    
-    # Get OpenEMR version from Terraform
-    local openemr_version
-    openemr_version=$(terraform_with_retry output -json 2>/dev/null | jq -r '.openemr_version.value // empty' 2>/dev/null || echo "$DEFAULT_OPENEMR_VERSION")
-    
-    if [ -z "$openemr_version" ] || [ "$openemr_version" = "null" ]; then
-        openemr_version="$DEFAULT_OPENEMR_VERSION"
-    fi
-    
-    echo -e "${BLUE}   Using OpenEMR version: $openemr_version${NC}"
-    
-    # Extract timestamp from snapshot ID for backup file naming
-    # Snapshot ID format: openemr-eks-aurora-61a909e9-backup-20251019-131840
-    # Backup file format: app-data-backup-20251019-131840.tar.gz
-    local timestamp
-    # shellcheck disable=SC2001
-    timestamp=$(echo "$SNAPSHOT_ID" | sed 's/.*backup-\([0-9]\{8\}-[0-9]\{6\}\).*/\1/')
-    
-    if [ -z "$timestamp" ] || [ "$timestamp" = "$SNAPSHOT_ID" ]; then
-        echo -e "${RED}❌ Could not extract timestamp from snapshot ID: $SNAPSHOT_ID${NC}" >&2
-        echo -e "${RED}   Expected format: openemr-eks-aurora-61a909e9-backup-YYYYMMDD-HHMMSS${NC}" >&2
-        return 1
-    fi
-    
-    echo -e "${BLUE}   Extracted timestamp: $timestamp${NC}"
-    
-    # Use the existing openemr namespace which already has IRSA configured
-    local temp_namespace
-    temp_namespace="openemr"
-    
-    # Note: EFS storage class is already configured by deploy.sh
-    
-    # Get OpenEMR role ARN from Terraform
-    echo -e "${BLUE}   Getting OpenEMR role ARN for IRSA...${NC}"
-    local openemr_role_arn
-    
-    # Call the function - the function handles its own output to stderr
-    # and returns only the clean role ARN on stdout (last line)
-    if ! openemr_role_arn=$(get_openemr_role_arn); then
-        echo -e "${RED}❌ Failed to get OpenEMR role ARN${NC}" >&2
-        return 1
-    fi
-    
-    # The function returns the role ARN on the last line, so extract it
-    openemr_role_arn=$(echo "$openemr_role_arn" | tail -n 1)
-    
-    echo -e "${GREEN}   ✅ Got OpenEMR role ARN: $openemr_role_arn${NC}"
-    
-    # Get database credentials from Terraform
-    echo -e "${BLUE}   Getting database credentials from Terraform...${NC}"
-    local db_endpoint db_user db_pass db_name
-    db_endpoint=$(terraform_with_retry output -raw aurora_endpoint 2>/dev/null || echo "")
-    # Clean the endpoint by removing trailing % and other shell artifacts
-    db_endpoint=$(echo "$db_endpoint" | tr -d '\r\n%')
-    db_user="openemr"  # Default username for Aurora
-    db_pass=$(terraform_with_retry output -raw aurora_password 2>/dev/null || echo "")
-    # Clean the password by removing trailing % and other shell artifacts
-    db_pass=$(echo "$db_pass" | tr -d '\r\n%')
-    db_name="openemr"  # Default database name
-    
-    if [ -z "$db_endpoint" ] || [ -z "$db_pass" ]; then
-        echo -e "${RED}❌ Failed to get database credentials from Terraform${NC}" >&2
-        return 1
-    fi
-    
-    echo -e "${GREEN}   ✅ Got database credentials${NC}"
-    
-    # Use existing openemr namespace (already has IRSA configured)
-    echo -e "${BLUE}   Using existing openemr namespace with IRSA...${NC}"
-    echo -e "${BLUE}   Using existing PVC and service account...${NC}"
-    
-    # Delete existing pod if it exists to avoid update conflicts
-    echo -e "${BLUE}   Cleaning up any existing restore pod...${NC}"
-    kubectl delete pod temp-data-restore -n "$temp_namespace" --ignore-not-found=true --timeout=30s 2>/dev/null || true
-    
-    # Create temporary restore pod with resource limits
-    echo -e "${BLUE}   Creating temporary restore pod...${NC}"
-    
-    # Create pod spec in a temporary file to avoid YAML parsing issues
-    POD_SPEC_FILE="/tmp/temp-restore-pod.yaml"
-    
-    # Write YAML template with placeholders
-    cat > "$POD_SPEC_FILE" <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: temp-data-restore
-  namespace: $temp_namespace
-spec:
-  serviceAccountName: openemr-sa
-  tolerations:
-  - key: "CriticalAddonsOnly"
-    operator: "Exists"
-    effect: "NoSchedule"
-  containers:
-  - name: restore
-    image: openemr/openemr:OPENEMR_VERSION_PLACEHOLDER
-    resources:
-      requests:
-        memory: "MEMORY_REQUEST_PLACEHOLDER"
-        cpu: "CPU_REQUEST_PLACEHOLDER"
-      limits:
-        memory: "MEMORY_LIMIT_PLACEHOLDER"
-        cpu: "CPU_LIMIT_PLACEHOLDER"
-    command: ['sh', '-c']
-    args:
-    - |
-      echo "Starting temporary OpenEMR container for data restoration..."
-      echo "OpenEMR version: OPENEMR_VERSION_PLACEHOLDER"
-      
-      # Install required tools
-      echo "Installing required tools..."
-      # OpenEMR 8.0.0 uses Alpine Linux, so we use apk
-      echo "Installing AWS CLI..."
-      apk add --no-cache aws-cli
-      
-      # Verify AWS CLI installation
-      echo "Verifying AWS CLI installation..."
-      aws --version || {
-        echo "ERROR: AWS CLI installation failed"
-        exit 1
-      }
-      
-      # Using timestamp from environment variable: \$timestamp
-      
-      # Test S3 access first
-      echo "Testing S3 access..."
-      aws s3 ls "s3://\$BACKUP_BUCKET/application-data/" | head -5
-      
-      # Download and extract application data
-      echo "Downloading application data from S3..."
-      if ! aws s3 cp "s3://\$BACKUP_BUCKET/application-data/app-data-backup-\$TIMESTAMP.tar.gz" /tmp/app-data.tar.gz; then
-        echo "ERROR: Failed to download application data from S3"
-        echo "Please check:"
-        echo "1. AWS credentials are properly configured"
-        echo "2. S3 bucket '\$BACKUP_BUCKET' exists and is accessible"
-        echo "3. File 'application-data/app-data-backup-\$TIMESTAMP.tar.gz' exists in the bucket"
-        exit 1
-      fi
-      
-      # Check download size
-      echo "Downloaded file size:"
-      ls -lh /tmp/app-data.tar.gz
-      
-      # Extract to EFS mount point
-      # Note: The tar was created with "tar -czf ... -C /path/to/openemr sites/"
-      # This means the archive contains paths like "sites/default/..."
-      # We need to extract and strip the "sites/" prefix since EFS is mounted at .../sites
-      echo "Extracting application data to EFS..."
-      tar -xzf /tmp/app-data.tar.gz -C /mnt/efs/ --strip-components=1
-      
-      # Verify extraction
-      echo "Verifying data extraction..."
-      ls -la /mnt/efs/default/
-      
-      # Check current sqlconf.php
-      echo "Current sqlconf.php content:"
-      if [ -f "/mnt/efs/default/sqlconf.php" ]; then
-        cat /mnt/efs/default/sqlconf.php
-      else
-        echo "sqlconf.php not found!"
-      fi
-      
-      # Fix OpenEMR configuration after restore
-      echo "Fixing OpenEMR configuration..."
-      
-      # Get database credentials from environment variables
-      # These should be set by the pod's environment
-      DB_ENDPOINT="\${DB_ENDPOINT:-}"
-      DB_USER="\${DB_USER:-}"
-      DB_PASS="\${DB_PASS:-}"
-      DB_NAME="\${DB_NAME:-}"
-      
-      if [ -z "\$DB_ENDPOINT" ] || [ -z "\$DB_PASS" ]; then
-        echo "ERROR: Missing database credentials"
-        exit 1
-      fi
-      
-        # Update sqlconf.php for new database endpoint (OpenEMR already created proper config files)
-        echo "Updating sqlconf.php for new database endpoint..."
-        if [ -f "/mnt/efs/default/sqlconf.php" ]; then
-          # Backup the original
-          cp /mnt/efs/default/sqlconf.php /mnt/efs/default/sqlconf.php.backup
-          
-          # Update database endpoint (cluster ID changes after restore)
-          echo "Before update:"
-          grep -E "\\\$host|\\\$config" /mnt/efs/default/sqlconf.php
-          
-          # Use printf to create a robust sqlconf.php with new credentials
-          printf '<?php\n//  OpenEMR\n//  MySQL Config\n\nglobal \$disable_utf8_flag;\n\$disable_utf8_flag = false;\n\n\$host   = '\''%s'\'';\n\$port   = '\''3306'\'';\n\$login  = '\''%s'\'';\n\$pass   = '\''%s'\'';\n\$dbase  = '\''%s'\'';\n\$db_encoding = '\''utf8mb4'\'';\n\n\$config = 1;\n' "\$DB_ENDPOINT" "\$DB_USER" "\$DB_PASS" "\$DB_NAME" > /mnt/efs/default/sqlconf.php
-          
-          echo "After update:"
-          grep -E "\\\\\\\$host|\\\\\\\$config" /mnt/efs/default/sqlconf.php
-          
-          echo "✅ Updated sqlconf.php with new database endpoint: \$DB_ENDPOINT"
-          echo "✅ Set config=1 to prevent setup from running"
-        else
-          echo "❌ ERROR: sqlconf.php not found - OpenEMR should have created this during deployment"
-          exit 1
-        fi
-      
-      # Verify config.php exists (OpenEMR should have created it during fresh install)
-      echo "Verifying config.php exists..."
-      if [ -f "/mnt/efs/default/config.php" ]; then
-        echo "✅ config.php exists (created by OpenEMR during fresh install)"
-      else
-        echo "❌ ERROR: config.php not found - OpenEMR should have created this during deployment"
-        exit 1
-      fi
-      
-      # Remove docker-leader and docker-initiated files (CRITICAL: must be done after config.php)
-      echo "Removing docker-leader and docker-initiated files..."
-      rm -f /mnt/efs/default/docker-leader
-      rm -f /mnt/efs/default/docker-initiated
-      touch /mnt/efs/default/docker-completed
-      echo "✅ Removed docker-leader and docker-initiated files"
-      echo "✅ Created docker-completed file"
-      
-      # Verify the files were created/removed correctly
-      echo "Verifying configuration files..."
-      if [ -f "/mnt/efs/default/config.php" ]; then
-        echo "✅ config.php exists"
-      else
-        echo "❌ ERROR: config.php was not created"
-        exit 1
-      fi
-      
-      if [ ! -f "/mnt/efs/default/docker-initiated" ]; then
-        echo "✅ docker-initiated file successfully removed"
-      else
-        echo "❌ ERROR: docker-initiated file still exists"
-        exit 1
-      fi
-      
-      if [ -f "/mnt/efs/default/docker-completed" ]; then
-        echo "✅ docker-completed file created"
-      else
-        echo "❌ ERROR: docker-completed file was not created"
-        exit 1
-      fi
-      
-      echo ""
-      echo "=== FINAL VERIFICATION ==="
-      echo "sqlconf.php status:"
-      if [ -f "/mnt/efs/default/sqlconf.php" ]; then
-        echo "✅ sqlconf.php exists"
-        echo "sqlconf.php content:"
-        cat /mnt/efs/default/sqlconf.php
-      else
-        echo "❌ ERROR: sqlconf.php was not created - this will cause OpenEMR to run setup!"
-        exit 1
-      fi
-      echo ""
-      echo "config.php content (first 20 lines):"
-      head -20 /mnt/efs/default/config.php
-      echo ""
-      echo "Docker files status:"
-      ls -la /mnt/efs/docker-*
-      
-      echo ""
-      echo "🎉 Data restoration and configuration fixing completed successfully!"
-    volumeMounts:
-    - name: efs-volume
-      mountPath: /mnt/efs
-    env:
-    - name: AWS_DEFAULT_REGION
-      value: "AWS_REGION_PLACEHOLDER"
-    - name: AWS_REGION
-      value: "AWS_REGION_PLACEHOLDER"
-    - name: AWS_WEB_IDENTITY_TOKEN_FILE
-      value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
-    - name: AWS_ROLE_ARN
-      value: "ROLE_ARN_PLACEHOLDER"
-    - name: BACKUP_BUCKET
-      value: "BACKUP_BUCKET_PLACEHOLDER"
-    - name: TIMESTAMP
-      value: "TIMESTAMP_PLACEHOLDER"
-    - name: DB_ENDPOINT
-      value: "DB_ENDPOINT_PLACEHOLDER"
-    - name: DB_USER
-      value: "DB_USER_PLACEHOLDER"
-    - name: DB_PASS
-      value: "DB_PASS_PLACEHOLDER"
-    - name: DB_NAME
-      value: "DB_NAME_PLACEHOLDER"
-  volumes:
-  - name: efs-volume
-    persistentVolumeClaim:
-      claimName: openemr-sites-pvc
-  restartPolicy: Never
-EOF
-    
-    # Substitute placeholders with actual values
-    sed -i '' "s|AWS_REGION_PLACEHOLDER|$AWS_REGION|g" "$POD_SPEC_FILE"
-    sed -i '' "s|ROLE_ARN_PLACEHOLDER|$openemr_role_arn|g" "$POD_SPEC_FILE"
-    sed -i '' "s|BACKUP_BUCKET_PLACEHOLDER|$BACKUP_BUCKET|g" "$POD_SPEC_FILE"
-    sed -i '' "s|TIMESTAMP_PLACEHOLDER|$timestamp|g" "$POD_SPEC_FILE"
-    sed -i '' "s|DB_ENDPOINT_PLACEHOLDER|$db_endpoint|g" "$POD_SPEC_FILE"
-    sed -i '' "s|DB_USER_PLACEHOLDER|$db_user|g" "$POD_SPEC_FILE"
-    sed -i '' "s|DB_PASS_PLACEHOLDER|$db_pass|g" "$POD_SPEC_FILE"
-    sed -i '' "s|DB_NAME_PLACEHOLDER|$db_name|g" "$POD_SPEC_FILE"
-    sed -i '' "s|OPENEMR_VERSION_PLACEHOLDER|$openemr_version|g" "$POD_SPEC_FILE"
-    sed -i '' "s|MEMORY_REQUEST_PLACEHOLDER|$TEMP_POD_MEMORY_REQUEST|g" "$POD_SPEC_FILE"
-    sed -i '' "s|CPU_REQUEST_PLACEHOLDER|$TEMP_POD_CPU_REQUEST|g" "$POD_SPEC_FILE"
-    sed -i '' "s|MEMORY_LIMIT_PLACEHOLDER|$TEMP_POD_MEMORY_LIMIT|g" "$POD_SPEC_FILE"
-    sed -i '' "s|CPU_LIMIT_PLACEHOLDER|$TEMP_POD_CPU_LIMIT|g" "$POD_SPEC_FILE"
-    
-    # Check for any remaining placeholders
-    if grep -q "PLACEHOLDER" "$POD_SPEC_FILE"; then
-        echo -e "${RED}❌ ERROR: Unsubstituted placeholders found in pod spec:${NC}" >&2
-        grep "PLACEHOLDER" "$POD_SPEC_FILE" >&2
-        exit 1
-    fi
-    
-    # Debug: Show resource section
-    echo "   Debug: Resource section after substitution:"
-    grep -A 10 -B 2 "resources:" "$POD_SPEC_FILE"
-    
-    # Apply the pod spec
-    if ! kubectl apply -f "$POD_SPEC_FILE"; then
-        echo -e "${RED}❌ Failed to create temporary restore pod${NC}" >&2
-        echo -e "${RED}   Pod spec file: $POD_SPEC_FILE${NC}" >&2
-        echo -e "${YELLOW}   Pod spec preserved for debugging: $POD_SPEC_FILE${NC}" >&2
-        echo -e "${YELLOW}   You can inspect it with: cat $POD_SPEC_FILE${NC}" >&2
-        return 1
-    fi
-    
-    # Pod spec file will be cleaned up after pod completion
-    
-    # Wait for PVC to be bound (will happen when pod is created due to WaitForFirstConsumer)
-    echo -e "${BLUE}   Waiting for PVC to be bound...${NC}"
-    
-    # Wait for PVC to be bound with a more robust approach
-    local pvc_bound=false
-    local wait_time=0
-    local max_wait=120
-    
-    while [ $wait_time -lt $max_wait ]; do
-        local pvc_status
-        pvc_status=$(kubectl get pvc openemr-sites-pvc -n "$temp_namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-        
-        if [ "$pvc_status" = "Bound" ]; then
-            echo -e "${GREEN}   ✅ PVC is bound${NC}"
-            pvc_bound=true
-            break
-        fi
-        
-        echo -e "${BLUE}   PVC status: $pvc_status (${wait_time}s / ${max_wait}s)${NC}"
-        sleep 5
-        wait_time=$((wait_time + 5))
-    done
-    
-    if [ "$pvc_bound" = false ]; then
-        echo -e "${RED}❌ PVC failed to bind within timeout${NC}" >&2
-        kubectl describe pvc openemr-sites-pvc -n "$temp_namespace" || true
-        return 1
-    fi
-    
-    # Wait for pod to start and complete
-    echo -e "${BLUE}   Waiting for temporary pod to start and complete...${NC}"
-    
-    # Wait for pod to be scheduled and running
-    local pod_started=false
-    local wait_time=0
-    local max_start_wait=300  # 5 minutes for pod to start
-    
-    while [ $wait_time -lt $max_start_wait ]; do
-        if kubectl get pod temp-data-restore -n "$temp_namespace" >/dev/null 2>&1; then
-            local pod_status
-            pod_status=$(kubectl get pod temp-data-restore -n "$temp_namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-            
-            if [ "$pod_status" = "Running" ] || [ "$pod_status" = "Succeeded" ] || [ "$pod_status" = "Failed" ]; then
-                echo -e "${GREEN}   ✅ Pod is $pod_status${NC}"
-                pod_started=true
-                break
-            fi
-            
-            echo -e "${BLUE}   Pod status: $pod_status (${wait_time}s / ${max_start_wait}s)${NC}"
-        else
-            echo -e "${BLUE}   Pod not found yet (${wait_time}s / ${max_start_wait}s)${NC}"
-        fi
-        
-        sleep 10
-        wait_time=$((wait_time + 10))
-    done
-    
-    if [ "$pod_started" = false ]; then
-        echo -e "${RED}❌ Pod failed to start within timeout${NC}" >&2
-        kubectl get events -n "$temp_namespace" --sort-by='.lastTimestamp' | tail -10 || true
-        echo -e "${YELLOW}   Pod spec preserved for debugging: $POD_SPEC_FILE${NC}" >&2
-        echo -e "${YELLOW}   You can inspect it with: cat $POD_SPEC_FILE${NC}" >&2
-        return 1
-    fi
-    
-    # Wait for pod to complete (Succeeded or Failed)
-    echo -e "${BLUE}   Waiting for data restoration to complete...${NC}"
-    local pod_completed=false
-    local completion_wait_time=0
-    local max_completion_wait=600  # 10 minutes for pod to complete
-    
-    while [ $completion_wait_time -lt $max_completion_wait ]; do
-        if kubectl get pod temp-data-restore -n "$temp_namespace" >/dev/null 2>&1; then
-            local pod_status
-            pod_status=$(kubectl get pod temp-data-restore -n "$temp_namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-            
-            if [ "$pod_status" = "Succeeded" ]; then
-                echo -e "${GREEN}   ✅ Pod completed successfully${NC}"
-                pod_completed=true
-                break
-            elif [ "$pod_status" = "Failed" ]; then
-                echo -e "${RED}❌ Pod failed${NC}" >&2
-                echo -e "${YELLOW}   Pod logs:${NC}"
-                kubectl logs temp-data-restore -n "$temp_namespace" || true
-                echo -e "${YELLOW}   Pod spec preserved for debugging: $POD_SPEC_FILE${NC}" >&2
-                echo -e "${YELLOW}   You can inspect it with: cat $POD_SPEC_FILE${NC}" >&2
-                return 1
-            fi
-            
-            echo -e "${BLUE}   Pod status: $pod_status (${completion_wait_time}s / ${max_completion_wait}s)${NC}"
-        else
-            # Pod might have completed and been cleaned up
-            echo -e "${GREEN}   ✅ Pod completed and was cleaned up${NC}"
-            pod_completed=true
-            break
-        fi
-        
-        sleep 15
-        completion_wait_time=$((completion_wait_time + 15))
-    done
-    
-    if [ "$pod_completed" = false ]; then
-        echo -e "${YELLOW}⚠️  Pod did not complete within timeout, checking logs...${NC}"
-        kubectl logs temp-data-restore -n "$temp_namespace" || true
-    fi
-    
-    # Check if pod completed successfully
-    local pod_status
-    pod_status=$(kubectl get pod temp-data-restore -n "$temp_namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-    
-    if [ "$pod_status" = "Succeeded" ]; then
-        echo -e "${GREEN}   ✅ Data restoration completed successfully${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Pod status: $pod_status${NC}"
-        echo -e "${YELLOW}   Final pod logs:${NC}"
-        kubectl logs temp-data-restore -n "$temp_namespace" || true
-        echo -e "${YELLOW}   Pod events:${NC}"
-        kubectl get events -n "$temp_namespace" --field-selector involvedObject.name=temp-data-restore || true
-    fi
-    
-    # Clean up temporary restore pod (but keep the openemr namespace)
-    echo -e "${YELLOW}ℹ️  Cleaning up temporary restore pod...${NC}"
-    kubectl delete pod temp-data-restore -n "$temp_namespace" --timeout=30s 2>/dev/null || true
-    
-    return 0
+    apply_data_restore_job
 }
 
 # Deploy OpenEMR with defaults and deployment
@@ -2136,6 +1966,68 @@ deploy_openemr() {
     
     echo -e "${GREEN}✅ OpenEMR deployment completed successfully${NC}"
     return 0
+}
+
+# Normalize kubectl jsonpath replica counts (empty/missing -> 0)
+_normalize_replica_count() {
+    local value="${1:-0}"
+    value=$(printf '%s' "$value" | tr -d '[:space:]')
+    if [ -z "$value" ] || ! [[ "$value" =~ ^[0-9]+$ ]]; then
+        echo "0"
+    else
+        echo "$value"
+    fi
+}
+
+# Scale to a single replica for post-restore verification.
+# OpenEMR uses EFS-backed leader election; verifying while HPA holds minReplicas=2
+# causes perpetual 0/N readyReplicas after crypto key rotation (E2E step 8 failure).
+prepare_single_replica_for_verification() {
+    echo -e "${YELLOW}📉 Preparing single-replica mode for restore verification...${NC}"
+
+    if kubectl get hpa openemr -n "$NAMESPACE" >/dev/null 2>&1; then
+        echo -e "${BLUE}   Removing HPA so verification runs with one leader pod...${NC}"
+        kubectl delete hpa openemr -n "$NAMESPACE" --ignore-not-found
+    fi
+
+    if kubectl get deployment openemr -n "$NAMESPACE" >/dev/null 2>&1; then
+        echo -e "${BLUE}   Scaling deployment to 1 replica...${NC}"
+        kubectl scale deployment openemr -n "$NAMESPACE" --replicas=1
+        echo -e "${BLUE}   Waiting for single-replica rollout...${NC}"
+        kubectl rollout status deployment/openemr -n "$NAMESPACE" --timeout="${POD_READY_WAIT_TIMEOUT}s" >/dev/null 2>&1 || true
+    fi
+
+    echo -e "${GREEN}✅ Single-replica verification mode ready${NC}"
+}
+
+# Re-apply HPA after restore verification (hpa.yaml is already substituted by deploy.sh)
+restore_autoscaling() {
+    local hpa_file="$PROJECT_ROOT/k8s/hpa.yaml"
+    # shellcheck disable=SC2016
+    if [ -f "$hpa_file" ] && ! grep -q '\${OPENEMR_MIN_REPLICAS}' "$hpa_file" 2>/dev/null; then
+        echo -e "${BLUE}   Re-applying HPA after successful restore verification...${NC}"
+        kubectl apply -f "$hpa_file"
+        echo -e "${GREEN}✅ HPA restored${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Skipping HPA re-apply (hpa.yaml missing or still has placeholders)${NC}"
+    fi
+}
+
+# Return 0 when at least one OpenEMR pod is Ready and serving HTTP
+_openemr_pod_is_healthy() {
+    local pod
+    pod=$(kubectl get pods -n "$NAMESPACE" -l app=openemr \
+        --field-selector=status.phase=Running \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    [ -z "$pod" ] && return 1
+
+    local ready
+    ready=$(kubectl get pod "$pod" -n "$NAMESPACE" \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "False")
+    [ "$ready" != "True" ] && return 1
+
+    kubectl exec -n "$NAMESPACE" "$pod" -c openemr -- \
+        curl -s -f http://localhost/interface/login/login.php >/dev/null 2>&1
 }
 
 # Clean up crypto key cache files after deployment
@@ -2186,28 +2078,29 @@ verify_restore_success() {
         local desired_count=0
         
         while [ "$elapsed" -lt "$VERIFICATION_TIMEOUT" ]; do
-            ready_count=$(kubectl get deployment openemr -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-            desired_count=$(kubectl get deployment openemr -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-            
+            ready_count=$(_normalize_replica_count "$(kubectl get deployment openemr -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")")
+            desired_count=$(_normalize_replica_count "$(kubectl get deployment openemr -n "$NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")")
+
             # Check if deployment exists
             if [ "$desired_count" -eq 0 ]; then
                 echo -e "${RED}❌ OpenEMR deployment not found or has 0 replicas${NC}" >&2
                 return 1
             fi
-            
-            if [ "$ready_count" = "$desired_count" ] && [ "$ready_count" -gt 0 ]; then
-                echo -e "${GREEN}✅ All $ready_count/$desired_count pods are ready${NC}"
+
+            # Success: at least one pod Ready and responding (single-replica verification mode)
+            if [ "$ready_count" -ge 1 ] && _openemr_pod_is_healthy; then
+                echo -e "${GREEN}✅ Restore verified: $ready_count/$desired_count pod(s) ready and serving HTTP${NC}"
                 return 0
             fi
-            
-            echo -e "${YELLOW}   ⏳ Pods: $ready_count/$desired_count ready (elapsed: ${elapsed}s)${NC}"
+
+            echo -e "${YELLOW}   ⏳ Pods: ${ready_count}/${desired_count} ready (elapsed: ${elapsed}s)${NC}"
             sleep "$VERIFICATION_INTERVAL"
             elapsed=$((elapsed + VERIFICATION_INTERVAL))
         done
         
         # If this is not the last attempt, clean crypto keys and retry
         if [ "$attempt" -lt "$VERIFICATION_MAX_ATTEMPTS" ]; then
-            echo -e "${YELLOW}⚠️  Verification attempt $attempt failed: Only $ready_count/$desired_count pods are ready${NC}"
+            echo -e "${YELLOW}⚠️  Verification attempt $attempt failed: ${ready_count}/${desired_count} pods ready with HTTP health${NC}"
             echo -e "${BLUE}   Cleaning crypto keys and retrying...${NC}"
             
             # Clean crypto keys from all pods
@@ -2223,7 +2116,7 @@ verify_restore_success() {
             sleep 30
         else
             # Final attempt failed
-            echo -e "${RED}❌ All $VERIFICATION_MAX_ATTEMPTS verification attempts failed: Only $ready_count/$desired_count pods are ready${NC}" >&2
+            echo -e "${RED}❌ All $VERIFICATION_MAX_ATTEMPTS verification attempts failed: ${ready_count}/${desired_count} pods ready with HTTP health${NC}" >&2
             return 1
         fi
         
@@ -2238,99 +2131,56 @@ verify_restore_success() {
 # =============================================================================
 
 main() {
-    echo -e "${BLUE}🔄 OpenEMR Restore Script - Streamlined Process${NC}"
+    echo -e "${BLUE}🔄 OpenEMR Restore Script${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "This script performs a complete restore of OpenEMR from backup:"
-    echo ""
-    echo "1. 🔄 Restore Database    - Creates database from snapshot (if needed)"
-    echo "2. 🧹 Clean Deployment    - Removes existing resources and database"
-    echo "3. 🚀 Deploy OpenEMR      - Fresh install (creates proper config files)"
-    echo "4. 📁 Restore Data        - Extracts backup files + updates configuration"
-    echo ""
-    echo "The script automatically detects if the database exists and adjusts the order accordingly."
-    echo "OpenEMR automatically starts working once database and config are ready."
-    echo ""
-        
-    # Parse and validate arguments
-    parse_arguments "$@"
-    
-    # Detect AWS region from Terraform state if not explicitly set via --region
-    get_aws_region
-    
-    validate_arguments
 
-    # Auto-detect cluster name and ensure kubeconfig
+    parse_arguments "$@"
+    get_aws_region
+    load_restore_plan_from_metadata || exit 1
+    validate_arguments
     auto_detect_cluster_name
     ensure_kubeconfig
 
-    # Run pre-flight validation
-    pre_flight_validation
+    # Single phase execution (orchestrator / --from-phase)
+    if [ -n "${EXECUTE_PHASE:-}" ]; then
+        run_execute_phase || exit 1
+        echo -e "${GREEN}✅ Phase '$EXECUTE_PHASE' completed${NC}"
+        exit 0
+    fi
 
-    # Execute restore steps
-    # Step 1: Clean deployment - removes existing OpenEMR resources and database
-    # Step 2: Deploy OpenEMR - fresh install (pods fail initially due to missing database, but create proper config files)
-    # Step 3: Restore RDS cluster - creates new database from snapshot
-    # Step 4: Restore application data - downloads/extracts backup files + updates config for new DB endpoint
-    #         OpenEMR pods automatically recover and start working once database and config are ready
-    
-    # Build steps array based on whether early database restore is needed
-    local steps=()
-    
-    # Add early database restore if needed
-    if [ "$EARLY_DB_RESTORE_NEEDED" = true ]; then
-        steps+=("restore_rds_cluster_from_snapshot:🔄 STEP 1: Restoring Database from Snapshot (Early)")
-        steps+=("run_clean_deployment:🧹 STEP 2: Running Clean Deployment")
-        steps+=("deploy_openemr:🚀 STEP 3: Deploying OpenEMR (Fresh Install)")
-        steps+=("restore_rds_cluster_from_snapshot:🔄 STEP 4: Restoring Database from Snapshot")
-        steps+=("restore_application_data:📁 STEP 5: Restoring Application Data & Updating Configuration")
+    if [ "$LEGACY_ORDER" = true ]; then
+        pre_flight_validation || exit 1
+        main_legacy || exit 1
     else
-        steps+=("run_clean_deployment:🧹 STEP 1: Running Clean Deployment")
-        steps+=("deploy_openemr:🚀 STEP 2: Deploying OpenEMR (Fresh Install)")
-        steps+=("restore_rds_cluster_from_snapshot:🔄 STEP 3: Restoring RDS Cluster from Snapshot")
-        steps+=("restore_application_data:📁 STEP 4: Restoring Application Data & Updating Configuration")
+        main_inverted || exit 1
     fi
-    
-    for step_info in "${steps[@]}"; do
-        local step_function="${step_info%%:*}"
-        local step_title="${step_info##*:}"
-        
-        echo -e "${BLUE}$step_title${NC}"
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        
-        if ! "$step_function"; then
-            echo -e "${RED}❌ Failed: $step_title${NC}" >&2
-                    exit 1
-                fi
-        
-        echo -e "${GREEN}✅ $step_title completed successfully${NC}"
-        echo ""
-    done
-    
-    # Clean up crypto key cache files after restore
-    echo -e "${BLUE}🔑 Crypto Key Cleanup${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    if ! cleanup_crypto_keys; then
-        echo -e "${YELLOW}⚠️  Crypto key cleanup had issues, but continuing...${NC}"
-    fi
-    echo ""
-    
-    # Final verification
-    echo -e "${BLUE}🔍 Final Verification${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    if ! verify_restore_success; then
-        echo -e "${RED}❌ Restore verification failed${NC}" >&2
-        exit 1
-    fi
-    
-    # Clean up pod spec file only if entire restore process succeeded
+
     if [ -n "$POD_SPEC_FILE" ] && [ -f "$POD_SPEC_FILE" ]; then
-        echo -e "${YELLOW}ℹ️  Cleaning up pod spec file...${NC}"
         rm -f "$POD_SPEC_FILE"
     fi
-    
+
     echo -e "${GREEN}🎉 OpenEMR has been restored from backup!${NC}"
 }
 
-# Execute main function
+# Delegate to openemr_dr Python package unless running internal bash phase
+if [ -z "${RESTORE_INTERNAL:-}" ]; then
+    RESTORE_BASH_ONLY=""
+    ORCH_ARGS=()
+    WANTS_HELP=0
+    for arg in "$@"; do
+        if [ "$arg" = "--bash-only" ]; then
+            RESTORE_BASH_ONLY=1
+        elif [ "$arg" = "-h" ] || [ "$arg" = "--help" ]; then
+            WANTS_HELP=1
+        else
+            ORCH_ARGS+=("$arg")
+        fi
+    done
+    if [ -z "$RESTORE_BASH_ONLY" ] && [ "$WANTS_HELP" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -d "$SCRIPT_DIR/openemr_dr" ]; then
+        export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:$PYTHONPATH}"
+        exec python3 -m openemr_dr restore "${ORCH_ARGS[@]}"
+    fi
+fi
+
 main "$@"

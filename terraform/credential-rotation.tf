@@ -27,15 +27,15 @@ resource "aws_secretsmanager_secret_version" "rds_slots" {
     A = {
       username = "openemr_a"
       password = "PLACEHOLDER_SEEDED_BY_DEPLOY_SCRIPT"
-      host     = aws_rds_cluster.openemr.endpoint
-      port     = tostring(aws_rds_cluster.openemr.port)
+      host     = try(aws_rds_cluster.openemr[0].endpoint, "pending-restore")
+      port     = try(tostring(aws_rds_cluster.openemr[0].port), "3306")
       dbname   = "openemr"
     }
     B = {
       username = "openemr_b"
       password = "PLACEHOLDER_SEEDED_BY_DEPLOY_SCRIPT"
-      host     = aws_rds_cluster.openemr.endpoint
-      port     = tostring(aws_rds_cluster.openemr.port)
+      host     = try(aws_rds_cluster.openemr[0].endpoint, "pending-restore")
+      port     = try(tostring(aws_rds_cluster.openemr[0].port), "3306")
       dbname   = "openemr"
     }
   })
@@ -63,10 +63,10 @@ resource "aws_secretsmanager_secret" "rds_admin" {
 resource "aws_secretsmanager_secret_version" "rds_admin" {
   secret_id = aws_secretsmanager_secret.rds_admin.id
   secret_string = jsonencode({
-    username = aws_rds_cluster.openemr.master_username
+    username = try(aws_rds_cluster.openemr[0].master_username, "openemr")
     password = random_password.db_password.result
-    host     = aws_rds_cluster.openemr.endpoint
-    port     = tostring(aws_rds_cluster.openemr.port)
+    host     = try(aws_rds_cluster.openemr[0].endpoint, "pending-restore")
+    port     = try(tostring(aws_rds_cluster.openemr[0].port), "3306")
     dbname   = "openemr"
   })
 

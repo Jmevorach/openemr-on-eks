@@ -187,8 +187,8 @@ resource "aws_backup_selection" "daily" {
     var.enable_waf ? [aws_s3_bucket.waf_logs[0].arn] : [],
     # EFS file system
     [aws_efs_file_system.openemr.arn],
-    # RDS cluster
-    [aws_rds_cluster.openemr.arn],
+    # RDS cluster (skipped when restore.sh will create from snapshot)
+    var.skip_rds_creation ? [] : [aws_rds_cluster.openemr[0].arn],
     # EKS cluster
     [data.aws_eks_cluster.openemr.arn]
   )
@@ -215,8 +215,8 @@ resource "aws_backup_selection" "weekly" {
     var.enable_waf ? [aws_s3_bucket.waf_logs[0].arn] : [],
     # EFS file system
     [aws_efs_file_system.openemr.arn],
-    # RDS cluster
-    [aws_rds_cluster.openemr.arn],
+    # RDS cluster (skipped when restore.sh will create from snapshot)
+    var.skip_rds_creation ? [] : [aws_rds_cluster.openemr[0].arn],
     # EKS cluster
     [data.aws_eks_cluster.openemr.arn]
   )
@@ -243,8 +243,8 @@ resource "aws_backup_selection" "monthly" {
     var.enable_waf ? [aws_s3_bucket.waf_logs[0].arn] : [],
     # EFS file system
     [aws_efs_file_system.openemr.arn],
-    # RDS cluster
-    [aws_rds_cluster.openemr.arn],
+    # RDS cluster (skipped when restore.sh will create from snapshot)
+    var.skip_rds_creation ? [] : [aws_rds_cluster.openemr[0].arn],
     # EKS cluster
     [data.aws_eks_cluster.openemr.arn]
   )

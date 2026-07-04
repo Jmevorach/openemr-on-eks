@@ -30,14 +30,23 @@ The OpenEMR backup system provides a comprehensive, multi-layered backup strateg
 - ✅ **Multiple backup strategies** (same-region, cross-region, cross-account)
 - ✅ **7-year retention** for compliance and long-term recovery needs
 
-The restore system has been significantly simplified and improved:
+The restore system uses a **Python orchestrator** (`scripts/openemr_dr`) with phased execution, manifest v2 metadata, and checkpoint resume. Bash `restore.sh` delegates to Python by default.
 
-- ✅ **One-command restore** - Simple, reliable restore with auto-detection
-- ✅ **Automatic cluster detection** - No need to specify cluster names manually
-- ✅ **Smart database restore** - Enhanced cross-region/cross-account snapshot restoration
-- ✅ **Strategy auto-detection** - Automatically detects restore strategy from backup metadata
-- ✅ **Application data restore** - Downloads and extracts data directly to EFS via existing pods
-- ✅ **Auto-reconfiguration** - Automatically updates database and Redis connections
+- ✅ **Phased restore** — preflight → bootstrap → RDS → data → deploy → verify
+- ✅ **Manifest v2** — restore from `--from-metadata s3://.../backup-metadata-....json`
+- ✅ **Checkpoint resume** — `--from-phase data --state-file .restore-state`
+- ✅ **Kubernetes Job** for application data restore (`k8s/jobs/data-restore-job.yaml`)
+- ✅ **One-command restore** — `./scripts/restore.sh <bucket> <snapshot-id>`
+- ✅ **Strategy auto-detection** — from backup metadata
+- ✅ **Cross-account restore** — support for restoring from different AWS accounts
+
+See [Disaster Recovery Python Architecture](DISASTER_RECOVERY_PYTHON.md) for full CLI and migration details.
+
+Legacy notes (still supported via `--legacy-order`):
+
+- ✅ **Smart database restore** — Enhanced cross-region/cross-account snapshot restoration
+- ✅ **Application data restore** — Downloads and extracts data to EFS via Job
+- ✅ **Auto-reconfiguration** — Updates database connections after restore
 - ✅ **Manual fallback** - Step-by-step manual instructions if automated process fails
 - ✅ **Modular options** - Restore database, app data, or both as needed
 - ✅ **Cross-account restore** - Support for restoring from different AWS accounts
@@ -303,17 +312,17 @@ Your AWS credentials need permissions for:
 ### Restore from Backup
 
 ```bash
-# Auto-detect restore strategy (recommended)
-./scripts/restore.sh <backup-bucket> <snapshot-id> <backup-region>
+# Recommended: Python orchestrator (default via restore.sh)
+./scripts/restore.sh <backup-bucket> <snapshot-id> --region <aws-region>
 
-# Cross-region restore
-./scripts/restore.sh <backup-bucket> <snapshot-id> --strategy cross-region
+# From backup manifest v2 (no manual snapshot/bucket pairing)
+./scripts/restore.sh --from-metadata s3://<bucket>/metadata/backup-metadata-<timestamp>.json
 
-# Cross-account restore
-./scripts/restore.sh <backup-bucket> <snapshot-id> --strategy cross-account --source-account 123456789012
+# Resume after a failed phase
+cd scripts && python3 -m openemr_dr restore <bucket> <snapshot> --from-phase data
 
-# Example with auto-detection
-./scripts/restore.sh openemr-backups-123456789012-openemr-eks-20250815 openemr-eks-aurora-backup-20250815-120000 us-east-1
+# Legacy flow (clean → deploy → RDS → data)
+./scripts/restore.sh <backup-bucket> <snapshot-id> --legacy-order --bash-only
 ```
 
 ## Backup Operations
@@ -815,7 +824,7 @@ For comprehensive testing of the entire backup and restore process, use the auto
 - This test creates and destroys real AWS resources
 - AWS resources will be created and destroyed during testing
 - Requires proper AWS credentials and permissions
-- Test duration: 160-165 minutes (~2.7 hours, measured from actual test runs)
+- Test duration: ~150-160 minutes (~2.5 hours on OpenEMR 8.1.x)
 - Backup creation: ~30-35 seconds, Restore: 38-43 minutes (comprehensive restore with verification)
 
 ## Cross-Region Disaster Recovery

@@ -35,7 +35,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.35" # Latest stable version (DRA GA, Cgroup autoconfiguration GA)
+  default     = "1.36" # Latest stable version (DRA GA, Cgroup autoconfiguration GA)
 }
 
 # =============================================================================
@@ -100,6 +100,14 @@ variable "aurora_max_capacity" {
   default     = 16 # High capacity for production workloads
 }
 
+# When true, skip creating the RDS cluster during terraform apply.
+# Used by E2E step 7 (DR recreate): restore.sh creates the cluster from snapshot in step 8.
+variable "skip_rds_creation" {
+  description = "Skip RDS cluster creation; restore.sh will create cluster from snapshot"
+  type        = bool
+  default     = false
+}
+
 # ElastiCache Serverless maximum data storage in gigabytes
 # This determines how much data can be stored in the cache
 # 20GB provides substantial caching capacity for session data and frequently accessed records
@@ -156,6 +164,13 @@ variable "allowed_cidr_blocks" {
 # =============================================================================
 # These variables control backup retention policies and data lifecycle management
 
+
+# Number of days to retain automated RDS backups
+variable "backup_retention_days" {
+  description = "Number of days to retain automated RDS cluster backups"
+  type        = number
+  default     = 30
+}
 
 # Enable deletion protection for RDS cluster
 # Prevents accidental deletion of the database cluster
@@ -334,7 +349,7 @@ variable "openemr_scale_up_stabilization_seconds" {
 variable "openemr_version" {
   description = "OpenEMR Docker image version to deploy (use specific versions for production)"
   type        = string
-  default     = "8.1.0" # Stable OpenEMR version
+  default     = "8.1.1" # Stable OpenEMR version
 
   # Validation ensures proper version format
   validation {

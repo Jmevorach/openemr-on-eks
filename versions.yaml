@@ -6,7 +6,7 @@
 # Core Application Versions
 applications:
   openemr:
-    current: "8.1.0"
+    current: "8.1.1"
     registry: "openemr/openemr"
     release_notes_url: "https://hub.docker.com/r/openemr/openemr/tags"
     notify_on_update: true
@@ -14,7 +14,7 @@ applications:
     description: "Version of OpenEMR docker image we use."
 
   fluent_bit:
-    current: "5.0.3"
+    current: "5.0.8"
     registry: "fluent/fluent-bit"
     notify_on_update: true
     requires_aws_cli: false
@@ -32,14 +32,14 @@ applications:
 # Infrastructure Versions
 infrastructure:
   eks:
-    current: "1.35"
-    aws_supported_versions: ["1.30", "1.31", "1.32", "1.33", "1.34", "1.35"]
+    current: "1.36"
+    aws_supported_versions: ["1.30", "1.31", "1.32", "1.33", "1.34", "1.35", "1.36"]
     notify_on_update: true
     requires_aws_cli: true
     description: "Amazon EKS cluster version"
 
   terraform:
-    current: "1.15.0"
+    current: "1.15.7"
     notify_on_update: true
     requires_aws_cli: false
     description: "Terraform version used in documentation and as the required_version constraint in terraform/main.tf and oidc_provider/main.tf"
@@ -58,14 +58,14 @@ databases:
 # Note: CoreDNS, kube-proxy, VPC CNI, and EBS CSI Driver are managed by EKS Auto Mode
 eks_addons:
   efs_csi_driver:
-    current: "v3.0.1-eksbuild.1"
+    current: "v3.3.0-eksbuild.1"
     notify_on_update: true
     requires_aws_cli: true
     aws_addon_name: "aws-efs-csi-driver"
     description: "EFS CSI Driver for persistent storage"
 
   metrics_server:
-    current: "v0.8.1-eksbuild.6"
+    current: "v0.8.1-eksbuild.11"
     notify_on_update: true
     requires_aws_cli: true
     aws_addon_name: "metrics-server"
@@ -75,7 +75,7 @@ eks_addons:
 terraform_modules:
   terraform_aws:
     source: "hashicorp/aws"
-    current: "6.28.0"
+    current: "6.52.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "Official AWS provider from Hashicorp for Terraform."
@@ -89,14 +89,14 @@ terraform_modules:
 
   aws_pod_identity:
     source: "terraform-aws-modules/eks-pod-identity/aws"
-    current: "2.8.0"
+    current: "2.8.1"
     notify_on_update: true
     requires_aws_cli: false
     description: "AWS provided module for EKS pod identities for Terraform."
 
   aws_eks:
     source: "terraform-aws-modules/eks/aws"
-    current: "21.19.0"
+    current: "21.24.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "AWS provided module for EKS for Terraform."
@@ -111,25 +111,25 @@ terraform_modules:
 # GitHub Workflow Actions Dependencies
 github_workflows:
   actions_checkout:
-    current: "v6.0.2"
+    current: "v7.0.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "Github action for checking out code from a registry."
 
   actions_setup_python:
-    current: "v6.2.0"
+    current: "v6.3.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "Github action for setting up a specified Python version."
 
   actions_setup_go:
-    current: "v6.4.0"
+    current: "v6.5.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "Github action for setting up a specified Go version."
 
   actions_setup_terraform:
-    current: "v4.0.0"
+    current: "v4.0.1"
     notify_on_update: true
     requires_aws_cli: false
     description: "Github action for setting up a specified Terraform version."
@@ -165,10 +165,10 @@ github_workflows:
     description: "Github action for configuring AWS credentials (aws-actions/configure-aws-credentials)."
 
   github_runner:
-    current: "ubuntu-24.04"
+    current: "ubuntu-26.04"
     notify_on_update: true
     requires_aws_cli: false
-    description: "GitHub-hosted runner environment (ubuntu-24.04)"
+    description: "GitHub-hosted runner environment (ubuntu-26.04)"
 
 # Pre-commit Hooks Versions
 pre_commit_hooks:
@@ -179,7 +179,7 @@ pre_commit_hooks:
     description: "https://github.com/pre-commit/pre-commit-hooks"
 
   black:
-    current: "26.3.1"
+    current: "26.5.1"
     notify_on_update: true
     requires_aws_cli: false
     description: "https://github.com/psf/black"
@@ -203,7 +203,7 @@ pre_commit_hooks:
     description: "https://github.com/pycqa/bandit"
 
   terraform_hooks:
-    current: "v1.105.0"
+    current: "v1.108.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "https://github.com/antonbabenko/pre-commit-terraform"
@@ -215,7 +215,7 @@ pre_commit_hooks:
     description: "https://github.com/koalaman/shellcheck-precommit"
 
   markdownlint:
-    current: "v0.48.0"
+    current: "v0.49.0"
     notify_on_update: true
     requires_aws_cli: false
     description: "https://github.com/igorshubovych/markdownlint-cli"
@@ -227,7 +227,7 @@ pre_commit_hooks:
     description: "https://github.com/adrienverge/yamllint"
 
   commitizen:
-    current: "v4.13.9"
+    current: "v4.16.4"
     notify_on_update: true
     requires_aws_cli: false
     description: "https://github.com/commitizen-tools/commitizen"
@@ -235,19 +235,19 @@ pre_commit_hooks:
 # Semver Package Versions (used in workflows)
 semver_packages:
   python_version:
-    current: "3.14.4"
+    current: "3.14.6"
     notify_on_update: true
     requires_aws_cli: false
     description: "Version of Python used in Github CI/CD workflows."
 
   terraform_version:
-    current: "1.15.0"
+    current: "1.15.7"
     notify_on_update: true
     requires_aws_cli: false
     description: "Version of Terraform used in Github CI/CD workflows."
 
   kubectl_version:
-    current: "v1.36.0"
+    current: "v1.36.2"
     notify_on_update: true
     requires_aws_cli: false
     description: "Version of Kubectl used in Github CI/CD workflows."
@@ -269,7 +269,7 @@ go_packages:
     min_version: "1.25"
 
   bubbletea:
-    current: "v2.0.6"
+    current: "v2.0.7"
     package_manager: "go"
     repository: "github.com/charmbracelet/bubbletea"
     module_path: "charm.land/bubbletea/v2"
@@ -279,7 +279,7 @@ go_packages:
     min_version: "v2.0.0"
 
   lipgloss:
-    current: "v2.0.3"
+    current: "v2.0.4"
     package_manager: "go"
     repository: "github.com/charmbracelet/lipgloss"
     module_path: "charm.land/lipgloss/v2"
@@ -288,10 +288,10 @@ go_packages:
     description: "Lipgloss styling library for the console TUI"
     min_version: "v2.0.0"
 
-# Python Package Dependencies (Warp Project + Credential Rotation)
+# Python Package Dependencies (Warp, Credential Rotation, openemr_dr)
 python_packages:
   pymysql:
-    current: "1.1.3"
+    current: "1.2.0"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -299,7 +299,7 @@ python_packages:
     min_version: "1.1.3"
 
   boto3:
-    current: "1.43.1"
+    current: "1.43.38"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -307,7 +307,7 @@ python_packages:
     min_version: "1.43.1"
 
   requests:
-    current: "2.33.1"
+    current: "2.34.2"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -315,7 +315,7 @@ python_packages:
     min_version: "2.32.5"
 
   kubernetes:
-    current: "35.0.0"
+    current: "36.0.2"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -323,7 +323,7 @@ python_packages:
     min_version: "35.0.0"
 
   pytest:
-    current: "9.0.3"
+    current: "9.1.1"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -347,7 +347,7 @@ python_packages:
     min_version: "7.0.0"
 
   black:
-    current: "26.3.1"
+    current: "26.5.1"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
@@ -355,17 +355,48 @@ python_packages:
     min_version: "25.0.0"
 
   mypy:
-    current: "1.20.2"
+    current: "2.1.0"
     package_manager: "pip"
     notify_on_update: true
     requires_aws_cli: false
     description: "Static type checker for Warp and credential rotation projects"
     min_version: "1.0.0"
 
+  ruff:
+    current: "0.11.12"
+    package_manager: "pip"
+    notify_on_update: true
+    requires_aws_cli: false
+    description: "Fast Python linter (openemr_dr uses ruff; Warp/credential-rotation use flake8+black)"
+    min_version: "0.11.0"
+
+# Python project CI profiles — maps packages to toolchains and requirement files
+python_projects:
+  openemr_dr:
+    path: scripts/openemr_dr
+    requirements_dev: scripts/requirements/openemr-dr-dev.txt
+    venv: scripts/.venv-openemr-dr
+    coverage_min: 90
+    tools: [ruff, mypy, bandit, pytest]
+  warp:
+    path: warp
+    requirements: warp/requirements.txt
+    requirements_dev: scripts/requirements/warp-dev.txt
+    venv: warp/.venv
+    coverage_min: 90
+    tools: [black, flake8, mypy, bandit, pytest]
+  credential_rotation:
+    path: tools/credential-rotation
+    requirements: tools/credential-rotation/requirements.txt
+    requirements_dev: scripts/requirements/credential-rotation-dev.txt
+    venv: tools/credential-rotation/.venv
+    coverage_min: 90
+    tools: [black, flake8, mypy, bandit, pytest]
+
 # Monitoring Stack Versions
 monitoring:
   prometheus_operator:
-    current: "84.4.0"
+    current: "87.4.0"
     chart: "kube-prometheus-stack"
     notify_on_update: true
     requires_aws_cli: false
@@ -380,7 +411,7 @@ monitoring:
     description: "Loki for log aggregation."
 
   tempo:
-    current: "2.17.8"
+    current: "2.26.0"
     chart: "tempo-distributed"
     repository: "grafana-community"
     notify_on_update: true
@@ -388,7 +419,7 @@ monitoring:
     description: "Tempo for distributed tracing with S3 storage in microservice mode (replaces Jaeger)."
 
   mimir:
-    current: "6.0.6"
+    current: "6.1.0"
     chart: "mimir-distributed"
     repository: "grafana"
     notify_on_update: true
@@ -416,14 +447,14 @@ monitoring:
 # Security Tools Versions (Zero-Tolerance Policy)
 security_tools:
   trivy:
-    current: "0.70.0"
+    current: "0.72.0"
     repository: "aquasecurity/trivy"
     notify_on_update: true
     requires_aws_cli: false
     description: "Trivy vulnerability, secret, and misconfiguration scanner"
 
   checkov:
-    current: "3.2.526"
+    current: "3.3.6"
     package_manager: "pip"
     repository: "bridgecrewio/checkov"
     notify_on_update: true
@@ -438,7 +469,7 @@ security_tools:
     description: "KICS (Keeping Infrastructure as Code Secure) scanner"
 
   gosec:
-    current: "v2.26.1"
+    current: "v2.27.1"
     repository: "securego/gosec"
     notify_on_update: true
     requires_aws_cli: false
@@ -457,7 +488,7 @@ notifications:
       - "pre_commit_hooks"       # Pre-commit hook tools for code quality (pre-commit-hooks, black, isort, flake8, bandit, terraform hooks, shellcheck, markdownlint, yamllint, commitizen)
       - "semver_packages"        # Semantic version packages used in workflows (Python version, Terraform version, kubectl version, semver Python package)
       - "go_packages"            # Go package dependencies for the console TUI (Go version, bubbletea, lipgloss)
-      - "python_packages"        # Python package dependencies for Warp and credential rotation (pymysql, boto3, requests, kubernetes, pytest, pytest-cov, flake8, black, mypy)
+      - "python_packages"        # Python deps (pytest, ruff, mypy, boto3, …) + python_projects CI profiles
       - "monitoring"             # Monitoring stack components (Prometheus Operator, Loki, Jaeger, cert-manager)
       - "eks_addons"             # EKS cluster add-ons managed outside of Auto Mode (EFS CSI Driver, Metrics Server)
       - "security_tools"         # Security scanning tools (Trivy, Checkov, KICS, gosec) - Zero-Tolerance Policy

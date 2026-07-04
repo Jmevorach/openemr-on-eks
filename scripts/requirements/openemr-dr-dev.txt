@@ -1,0 +1,7 @@
+# OpenEMR DR (openemr_dr) dev/test toolchain — pins MUST match versions.yaml.
+# Regenerate/check: ./scripts/validate-python-requirements.sh openemr_dr
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.11.12
+mypy==2.1.0
+bandit[toml]==1.9.4

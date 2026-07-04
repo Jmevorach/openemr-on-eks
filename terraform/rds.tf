@@ -51,9 +51,15 @@ resource "aws_security_group" "rds" {
 
 # Aurora Serverless V2 Cluster - Main database cluster for OpenEMR
 # Aurora Serverless V2 provides automatic scaling and high availability
+locals {
+  aurora_cluster_id = "${var.cluster_name}-aurora-${random_id.global_suffix.hex}"
+}
+
 resource "aws_rds_cluster" "openemr" {
+  count = var.skip_rds_creation ? 0 : 1
+
   # Unique cluster identifier with random suffix to prevent naming conflicts
-  cluster_identifier = "${var.cluster_name}-aurora-${random_id.global_suffix.hex}"
+  cluster_identifier = local.aurora_cluster_id
 
   # Aurora MySQL engine configuration
   engine         = "aurora-mysql"         # Aurora MySQL engine
@@ -68,7 +74,7 @@ resource "aws_rds_cluster" "openemr" {
   db_subnet_group_name   = aws_db_subnet_group.openemr.name # Subnet group for deployment
 
   # Backup and maintenance configuration
-  backup_retention_period      = 30                    # 30 days backup retention
+  backup_retention_period      = var.backup_retention_days
   preferred_backup_window      = "03:00-04:00"         # Backup window (UTC)
   preferred_maintenance_window = "sun:04:00-sun:05:00" # Maintenance window (UTC)
 
@@ -115,12 +121,12 @@ resource "aws_rds_cluster" "openemr" {
 # Aurora Serverless V2 Instances - Database instances within the cluster
 # Multiple instances provide high availability and read scaling capabilities
 resource "aws_rds_cluster_instance" "openemr" {
-  count              = 2                                           # Two instances for high availability
+  count              = var.skip_rds_creation ? 0 : 2
   identifier         = "${var.cluster_name}-aurora-${count.index}" # Unique instance identifier
-  cluster_identifier = aws_rds_cluster.openemr.id                  # Reference to the cluster
+  cluster_identifier = aws_rds_cluster.openemr[0].id               # Reference to the cluster
   instance_class     = "db.serverless"                             # Serverless V2 instance class
-  engine             = aws_rds_cluster.openemr.engine              # Aurora MySQL engine
-  engine_version     = aws_rds_cluster.openemr.engine_version      # Engine version
+  engine             = aws_rds_cluster.openemr[0].engine           # Aurora MySQL engine
+  engine_version     = aws_rds_cluster.openemr[0].engine_version   # Engine version
 
   # Auto minor version upgrade for security patches
   auto_minor_version_upgrade = true # Automatically apply minor version upgrades

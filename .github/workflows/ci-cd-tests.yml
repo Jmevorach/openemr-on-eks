@@ -46,6 +46,7 @@ on:
         - documentation
         - warp
         - credential_rotation
+        - openemr_dr
 
 # Cancel in-progress runs when a new commit is pushed to the same branch/PR
 concurrency:
@@ -60,17 +61,94 @@ permissions:
 
 # Environment variables for consistent tool versions across all jobs
 env:
-  PYTHON_VERSION: '3.14.4'    # Python version for YAML validation and dependencies
-  TERRAFORM_VERSION: '1.15.0' # Terraform version for infrastructure validation
-  KUBECTL_VERSION: 'v1.36.0'  # kubectl version for Kubernetes manifest validation
+  PYTHON_VERSION: '3.14.6'    # Python version for YAML validation and dependencies
+  TERRAFORM_VERSION: '1.15.7' # Terraform version for infrastructure validation
+  KUBECTL_VERSION: 'v1.36.2'  # kubectl version for Kubernetes manifest validation
 
 jobs:
+  # Detect which Python projects / requirement files changed (skip unrelated CI on push/PR)
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-26.04
+    outputs:
+      openemr_dr: ${{ steps.filter.outputs.openemr_dr }}
+      warp: ${{ steps.filter.outputs.warp }}
+      credential_rotation: ${{ steps.filter.outputs.credential_rotation }}
+      python_requirements: ${{ steps.filter.outputs.python_requirements }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Detect path changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            openemr_dr:
+              - 'scripts/openemr_dr/**'
+              - 'scripts/requirements/openemr-dr-dev.txt'
+              - 'scripts/ci/**'
+              - 'scripts/run-dr-tests.sh'
+              - 'scripts/install-python-dev.sh'
+              - 'scripts/validate-python-requirements.sh'
+              - 'scripts/test-openemr-dr-pinned-versions.sh'
+              - 'scripts/restore.sh'
+              - 'versions.yaml'
+            warp:
+              - 'warp/**'
+              - 'scripts/requirements/warp-dev.txt'
+              - 'scripts/test-warp-pinned-versions.sh'
+              - 'scripts/ci/**'
+              - 'scripts/install-python-dev.sh'
+              - 'scripts/validate-python-requirements.sh'
+              - 'versions.yaml'
+            credential_rotation:
+              - 'tools/credential-rotation/**'
+              - 'scripts/requirements/credential-rotation-dev.txt'
+              - 'scripts/test-credential-rotation-pinned-versions.sh'
+              - 'scripts/ci/**'
+              - 'scripts/install-python-dev.sh'
+              - 'scripts/validate-python-requirements.sh'
+              - 'versions.yaml'
+            python_requirements:
+              - 'versions.yaml'
+              - 'scripts/requirements/**'
+              - 'scripts/lib/versions-yq.sh'
+              - 'scripts/lib/python-venv.sh'
+              - 'scripts/validate-python-requirements.sh'
+              - 'scripts/install-python-dev.sh'
+
+  # Validate all Python requirement pins when versions.yaml or requirements/ change
+  python-requirements-validate:
+    name: Python Requirements Validation
+    runs-on: ubuntu-26.04
+    needs: changes
+    if: |
+      needs.changes.outputs.python_requirements == 'true' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.test_suite == 'all' ||
+        github.event.inputs.test_suite == 'openemr_dr' ||
+        github.event.inputs.test_suite == 'warp' ||
+        github.event.inputs.test_suite == 'credential_rotation'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Install yq
+        run: |
+          chmod +x scripts/ci/install-yq.sh
+          ./scripts/ci/install-yq.sh
+
+      - name: Validate all Python requirement pins
+        run: ./scripts/validate-python-requirements.sh all
+
   # Primary test job - runs test suites in parallel using matrix strategy
   # This job executes the comprehensive test suite across different categories
   # to validate code quality, Kubernetes manifests, script syntax, and documentation
   test:
     name: Run Test Suite
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Matrix strategy for parallel execution of different test suites
     # Each test suite runs independently, allowing for faster overall execution
     strategy:
@@ -91,11 +169,11 @@ jobs:
     steps:
       # Step 1: Checkout repository code for testing
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       # Step 2: Set up Python environment for YAML validation and dependencies
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -107,7 +185,7 @@ jobs:
 
       # Step 4: Set up Terraform for infrastructure validation
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v4.0.0
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
@@ -128,6 +206,12 @@ jobs:
         run: |
           sudo apt-get install -y bats || true
           bats --version 2>/dev/null || echo "BATS not available (optional)"
+
+      # Step 6c: Install yq for Python requirement pin validation in script_validation suite
+      - name: Install yq
+        run: |
+          chmod +x scripts/ci/install-yq.sh
+          ./scripts/ci/install-yq.sh
 
       # Step 7: Validate environment and dependencies before testing
       # This step ensures all required tools are properly installed and accessible
@@ -185,16 +269,16 @@ jobs:
   # and best practices enforcement across different file types
   lint-and-validate:
     name: Lint and Validate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       # Step 1: Checkout repository code for validation
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       # Step 2: Set up Python environment for YAML validation
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -206,7 +290,7 @@ jobs:
 
       # Step 4: Set up Terraform for infrastructure validation
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v4.0.0
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
@@ -279,12 +363,12 @@ jobs:
   # and misconfigurations across the entire repository. ALL findings will fail the build.
   security-scan:
     name: Security Scan (Zero-Tolerance)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       # Step 1: Checkout repository code for security scanning
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       # Step 2: Run Trivy vulnerability scanner in table format (STRICT MODE)
       # This scan produces human-readable output and FAILS on ANY finding
@@ -366,16 +450,16 @@ jobs:
   # and ensuring proper file permissions and structure
   code-quality:
     name: Code Quality
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       # Step 1: Checkout repository code for quality analysis
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       # Step 2: Set up Python environment for quality checks
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -416,56 +500,35 @@ jobs:
           fi
 
   # Warp project CI/CD job - Python package testing and validation
-  # This job runs comprehensive testing for the Warp project (OpenEMR Data Upload Accelerator)
-  # It runs when warp/ files change, versions.yaml changes, or when explicitly triggered
   warp-ci:
     name: Warp CI/CD
-    runs-on: ubuntu-24.04
-    # Run if manually triggered with 'all' or 'warp', or on push/PR (workflow paths filter handles file detection)
+    runs-on: ubuntu-26.04
+    needs: changes
     if: |
       (github.event_name == 'workflow_dispatch' &&
        (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'warp')) ||
-      github.event_name != 'workflow_dispatch'
+      (github.event_name != 'workflow_dispatch' && needs.changes.outputs.warp == 'true')
 
     steps:
-      # Step 1: Checkout repository code
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
-      # Step 2: Set up Python environment
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Step 3: Install yq for reading versions.yaml
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          chmod +x scripts/ci/install-yq.sh
+          ./scripts/ci/install-yq.sh
 
-      # Step 4: Test pinned versions compatibility
       - name: Test pinned versions compatibility
-        run: |
-          ./scripts/test-warp-pinned-versions.sh
+        run: ./scripts/test-warp-pinned-versions.sh
 
-      # Step 5: Install Python dependencies
-      - name: Install dependencies
-        run: |
-          cd warp
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-          # Install test dependencies (versions pinned to match versions.yaml)
-          pip install pytest==9.0.3 pytest-cov==7.1.0 flake8==7.3.0 black==26.3.1 mypy==1.20.2
+      - name: Run Warp Python CI
+        run: ./scripts/ci/run-python-ci.sh warp
 
-      # Step 6: Run pytest with coverage (exclude benchmarks)
-      - name: Run pytest with coverage
-        run: |
-          cd warp
-          pytest tests/ -v --cov=warp --cov-report=term-missing --cov-report=html --ignore=tests/benchmarks --cov-fail-under=90
-
-      # Step 7: Upload coverage reports as artifacts
       - name: Upload coverage reports
         uses: actions/upload-artifact@v6
         if: always()
@@ -473,26 +536,8 @@ jobs:
           name: warp-coverage-report
           path: warp/htmlcov/
           retention-days: 7
+          if-no-files-found: ignore
 
-      # Step 8: Check code formatting with black (fail if unformatted)
-      - name: Format check with black
-        run: |
-          cd warp
-          black warp/ tests/ --line-length 127 --check --diff
-
-      # Step 9: Run flake8 linting (after formatting)
-      - name: Run flake8
-        run: |
-          cd warp
-          flake8 warp/ tests/ --max-line-length=127 --extend-ignore=E203 --count --statistics
-
-      # Step 10: Run type checking with mypy
-      - name: Run type checking with mypy
-        run: |
-          cd warp
-          mypy warp/ --ignore-missing-imports || echo "Type checking completed with warnings"
-
-      # Step 11: Run Trivy security scan for warp (STRICT MODE)
       - name: Run Trivy security scan (Zero-Tolerance)
         uses: aquasecurity/trivy-action@master
         with:
@@ -502,53 +547,94 @@ jobs:
           output: 'trivy-warp-results.txt'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           scanners: 'vuln,secret,misconfig'
-          exit-code: '1'               # FAIL on any finding (zero-tolerance)
-          trivyignores: '.trivyignore' # Use ignore file for false positives only
+          exit-code: '1'
+          trivyignores: '.trivyignore'
 
-      # Step 12: Display Trivy results
       - name: Display Trivy results
         if: always()
         run: |
-          echo "🔍 Trivy Security Scan Results for Warp (ZERO-TOLERANCE):"
+          echo "Trivy Security Scan Results for Warp (ZERO-TOLERANCE):"
           echo "=========================================================="
           if [ -f "trivy-warp-results.txt" ]; then
             cat trivy-warp-results.txt
           else
-            echo "✅ No vulnerabilities found - scan passed"
+            echo "No vulnerabilities found - scan passed"
           fi
           echo "=========================================================="
 
-  # Credential Rotation CI job - Python package testing and validation
-  # This job runs comprehensive testing for the credential rotation tool
-  # It validates the dual-slot rotation logic, EFS atomic writes, and K8s integration
-  credential-rotation-ci:
-    name: Credential Rotation CI
-    runs-on: ubuntu-24.04
+  # OpenEMR DR Python CI — restore/backup orchestrator with strict quality gates
+  openemr-dr-ci:
+    name: OpenEMR DR Python CI
+    runs-on: ubuntu-26.04
+    needs: changes
     if: |
       (github.event_name == 'workflow_dispatch' &&
-       (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'credential_rotation')) ||
-      github.event_name != 'workflow_dispatch'
+       (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'openemr_dr')) ||
+      (github.event_name != 'workflow_dispatch' && needs.changes.outputs.openemr_dr == 'true')
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        uses: actions/setup-python@v6.3.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install yq
         run: |
-          cd tools/credential-rotation
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest==9.0.3 pytest-cov==7.1.0 flake8==7.3.0 black==26.3.1 mypy==1.20.2
+          chmod +x scripts/ci/install-yq.sh
+          ./scripts/ci/install-yq.sh
 
-      - name: Run pytest with coverage
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Test pinned versions compatibility
+        run: ./scripts/test-openemr-dr-pinned-versions.sh
+
+      - name: Run OpenEMR DR Python CI
+        run: ./scripts/ci/run-python-ci.sh openemr_dr
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: openemr-dr-coverage-report
+          path: scripts/openemr_dr/htmlcov/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Credential Rotation CI job
+  credential-rotation-ci:
+    name: Credential Rotation CI
+    runs-on: ubuntu-26.04
+    needs: changes
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.test_suite == 'all' || github.event.inputs.test_suite == 'credential_rotation')) ||
+      (github.event_name != 'workflow_dispatch' && needs.changes.outputs.credential_rotation == 'true')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install yq
         run: |
-          cd tools/credential-rotation
-          PYTHONPATH=src pytest tests/ -v --cov=credential_rotation --cov-report=term-missing --cov-report=html --cov-fail-under=90
+          chmod +x scripts/ci/install-yq.sh
+          ./scripts/ci/install-yq.sh
+
+      - name: Test pinned versions compatibility
+        run: ./scripts/test-credential-rotation-pinned-versions.sh
+
+      - name: Run Credential Rotation Python CI
+        run: ./scripts/ci/run-python-ci.sh credential_rotation
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v6
@@ -557,21 +643,7 @@ jobs:
           name: credential-rotation-coverage-report
           path: tools/credential-rotation/htmlcov/
           retention-days: 7
-
-      - name: Format check with black
-        run: |
-          cd tools/credential-rotation
-          black src/ tests/ --line-length 127 --check --diff
-
-      - name: Run flake8
-        run: |
-          cd tools/credential-rotation
-          flake8 src/ tests/ --max-line-length=127 --extend-ignore=E203 --count --statistics
-
-      - name: Run type checking with mypy
-        run: |
-          cd tools/credential-rotation
-          mypy src/credential_rotation/ --ignore-missing-imports || echo "Type checking completed with warnings"
+          if-no-files-found: ignore
 
       - name: Run Trivy security scan (Zero-Tolerance)
         uses: aquasecurity/trivy-action@master
@@ -602,14 +674,23 @@ jobs:
   # overview of the entire CI/CD pipeline execution
   summary:
     name: Test Summary
-    runs-on: ubuntu-24.04
-    needs: [test, lint-and-validate, security-scan, code-quality, warp-ci, credential-rotation-ci]
-    if: always()  # Run summary regardless of job outcomes
+    runs-on: ubuntu-26.04
+    needs:
+      - changes
+      - test
+      - lint-and-validate
+      - security-scan
+      - code-quality
+      - python-requirements-validate
+      - warp-ci
+      - openemr-dr-ci
+      - credential-rotation-ci
+    if: always()
 
     steps:
       # Step 1: Checkout repository code for summary generation
       - name: Checkout code
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.0
 
       # Step 2: Download all test result artifacts from previous jobs
       - name: Download all test results
@@ -647,10 +728,18 @@ jobs:
             echo "✅ **Warp tests passed successfully!**"
           elif [ "${{ needs.warp-ci.result }}" == "skipped" ]; then
             echo "⏭️ **Warp tests skipped** (no warp files changed or not selected)"
-          elif [ -z "${{ needs.warp-ci.result }}" ]; then
-            echo "⏭️ **Warp tests not run** (workflow paths filter)"
           else
             echo "❌ **Warp tests failed or had issues** - Check the warp-ci job logs"
+          fi
+          echo ""
+
+          echo "## 🔄 OpenEMR DR Python CI Status"
+          if [ "${{ needs.openemr-dr-ci.result }}" == "success" ]; then
+            echo "✅ **OpenEMR DR Python tests passed successfully!**"
+          elif [ "${{ needs.openemr-dr-ci.result }}" == "skipped" ]; then
+            echo "⏭️ **OpenEMR DR tests skipped** (no openemr_dr files changed or not selected)"
+          else
+            echo "❌ **OpenEMR DR tests failed** - Check the openemr-dr-ci job logs"
           fi
           echo ""
 
@@ -664,11 +753,35 @@ jobs:
           fi
           echo ""
 
-          echo "## 📊 Overall Status"
-          if [ "${{ needs.test.result }}" == "success" ] && [ "${{ needs.lint-and-validate.result }}" == "success" ]; then
-            echo "✅ **All tests passed successfully!**"
+          echo "## 📦 Python Requirements Validation"
+          if [ "${{ needs.python-requirements-validate.result }}" == "success" ]; then
+            echo "✅ **All Python requirement pins match versions.yaml**"
+          elif [ "${{ needs.python-requirements-validate.result }}" == "skipped" ]; then
+            echo "⏭️ **Requirements validation skipped** (versions.yaml unchanged)"
           else
-            echo "❌ **Some tests failed. Please review the logs above.**"
+            echo "❌ **Requirements pin validation failed** - Check python-requirements-validate job logs"
+          fi
+          echo ""
+
+          echo "## 📊 Overall Status"
+          OVERALL_OK=true
+          for job_result in \
+            "${{ needs.test.result }}" \
+            "${{ needs.lint-and-validate.result }}" \
+            "${{ needs.security-scan.result }}" \
+            "${{ needs.python-requirements-validate.result }}" \
+            "${{ needs.warp-ci.result }}" \
+            "${{ needs.openemr-dr-ci.result }}" \
+            "${{ needs.credential-rotation-ci.result }}"; do
+            if [ "$job_result" == "failure" ]; then
+              OVERALL_OK=false
+              break
+            fi
+          done
+          if [ "$OVERALL_OK" = true ]; then
+            echo "✅ **All required CI jobs passed or were skipped appropriately!**"
+          else
+            echo "❌ **Some CI jobs failed. Please review the logs above.**"
           fi
 
           echo ""

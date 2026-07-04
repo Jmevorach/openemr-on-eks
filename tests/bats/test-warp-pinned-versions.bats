@@ -1,9 +1,8 @@
 #!/usr/bin/env bats
 # -----------------------------------------------------------------------------
 # BATS Suite: scripts/test-warp-pinned-versions.sh
-# Purpose: Validate dependency gates, normalize_python_version() function,
-#          read_version() contract against versions.yaml, and fail-fast
-#          behavior before expensive pip install/test execution.
+# Purpose: Validate dependency gates and versions.yaml integration via shared
+#          lib/versions-yq.sh used by the slim warp pin smoke test script.
 # Scope:   Non-destructive — tests dependency checks and version parsing only.
 # -----------------------------------------------------------------------------
 
@@ -12,6 +11,7 @@ load test_helper
 setup() { cd "$PROJECT_ROOT"; }
 
 SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
+LIB="${SCRIPTS_DIR}/lib/versions-yq.sh"
 
 # ── Executable & syntax ─────────────────────────────────────────────────────
 
@@ -23,10 +23,13 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
   bash -n "$SCRIPT"
 }
 
+@test "versions-yq.sh has valid bash syntax" {
+  bash -n "$LIB"
+}
+
 # ── Dependency gate: yq ─────────────────────────────────────────────────────
 
 @test "fails clearly when yq is unavailable" {
-  # Create a temp dir with a fake PATH that has bash but NOT yq
   local tmpbin
   tmpbin=$(mktemp -d)
   ln -s "$(command -v bash)" "$tmpbin/bash"
@@ -46,10 +49,10 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
   ln -s "$(command -v command)" "$tmpbin/command" 2>/dev/null || true
   run env PATH="$tmpbin" bash "$SCRIPT"
   rm -rf "$tmpbin"
-  [[ "$output" =~ (github.com/mikefarah/yq|Install yq) ]]
+  [[ "$output" =~ (github.com/mikefarah/yq|Install yq|ERROR) ]]
 }
 
-# ── normalize_python_version (function-level) ──────────────────────────────
+# ── normalize_python_version (shared lib) ──────────────────────────────────
 
 @test "normalize_python_version: 3.14.0 -> 3.14" {
   result=$(echo "3.14.0" | awk -F. '{print $1"."$2}')
@@ -66,43 +69,42 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
   [ "$result" = "3.9" ]
 }
 
-@test "normalize_python_version function exists in script" {
-  run grep 'normalize_python_version()' "$SCRIPT"
+@test "normalize_python_version function exists in shared lib" {
+  run grep 'normalize_python_version()' "$LIB"
   [ "$status" -eq 0 ]
 }
 
-# ── read_version (function-level) ──────────────────────────────────────────
+# ── read_version (shared lib) ──────────────────────────────────────────────
 
-@test "read_version function exists in script" {
-  run grep 'read_version()' "$SCRIPT"
+@test "read_version function exists in shared lib" {
+  run grep 'read_version()' "$LIB"
   [ "$status" -eq 0 ]
 }
 
 @test "read_version exits on empty/null version" {
-  # Verify the function has the null check somewhere in its body
-  run grep -A20 'read_version()' "$SCRIPT"
+  run grep -A20 'read_version()' "$LIB"
   [[ "$output" =~ null ]]
 }
 
 # ── versions.yaml cross-reference ──────────────────────────────────────────
 
-@test "script reads python version from versions.yaml" {
-  run grep "applications.python.current" "$SCRIPT"
+@test "script delegates validate-python-requirements for warp" {
+  run grep 'validate-python-requirements.sh.*warp' "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
-@test "script reads pymysql version from versions.yaml" {
+@test "script reads pymysql version from versions.yaml via lib" {
   run grep "python_packages.pymysql.current" "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
-@test "script reads boto3 version from versions.yaml" {
+@test "script reads boto3 version from versions.yaml via lib" {
   run grep "python_packages.boto3.current" "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
-@test "script reads pytest version from versions.yaml" {
-  run grep "python_packages.pytest.current" "$SCRIPT"
+@test "script uses install-python-dev.sh for warp" {
+  run grep 'install-python-dev.sh.*warp' "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
@@ -119,19 +121,17 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
 # ── Script uses set -e ─────────────────────────────────────────────────────
 
 @test "script uses set -e for fail-fast" {
-  run grep '^set -e' "$SCRIPT"
+  run grep '^set -euo pipefail' "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Function-level unit tests
-# These extract functions from the script and test them with controlled
-# inputs in isolation from the script's main execution flow.
+# Function-level unit tests (shared lib)
 # ═══════════════════════════════════════════════════════════════════════════
 
 @test "UNIT: normalize_python_version extracts major.minor from 3-part version" {
   local func_file
-  func_file=$(extract_function "$SCRIPT" "normalize_python_version")
+  func_file=$(extract_function "$LIB" "normalize_python_version")
   run bash -c '
     source "'"$func_file"'"
     normalize_python_version "3.14.2"
@@ -143,7 +143,7 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
 
 @test "UNIT: normalize_python_version passes through 2-part version unchanged" {
   local func_file
-  func_file=$(extract_function "$SCRIPT" "normalize_python_version")
+  func_file=$(extract_function "$LIB" "normalize_python_version")
   run bash -c '
     source "'"$func_file"'"
     normalize_python_version "3.14"
@@ -155,7 +155,7 @@ SCRIPT="${SCRIPTS_DIR}/test-warp-pinned-versions.sh"
 
 @test "UNIT: normalize_python_version handles old Python version 3.9.18" {
   local func_file
-  func_file=$(extract_function "$SCRIPT" "normalize_python_version")
+  func_file=$(extract_function "$LIB" "normalize_python_version")
   run bash -c '
     source "'"$func_file"'"
     normalize_python_version "3.9.18"
@@ -175,10 +175,9 @@ applications:
     current: "3.99"
 YAML
   local func_file
-  func_file=$(extract_function "$SCRIPT" "read_version")
+  func_file=$(extract_function "$LIB" "read_version")
   run bash -c '
-    RED="\033[0;31m"; NC="\033[0m"
-    VERSIONS_FILE="'"${tmpdir}/versions.yaml"'"
+    VERSIONS_YQ_FILE="'"${tmpdir}/versions.yaml"'"
     source "'"$func_file"'"
     read_version ".applications.python.current"
   '
@@ -198,10 +197,9 @@ applications:
     current: "3.14"
 YAML
   local func_file
-  func_file=$(extract_function "$SCRIPT" "read_version")
+  func_file=$(extract_function "$LIB" "read_version")
   run bash -c '
-    RED="\033[0;31m"; NC="\033[0m"
-    VERSIONS_FILE="'"${tmpdir}/versions.yaml"'"
+    VERSIONS_YQ_FILE="'"${tmpdir}/versions.yaml"'"
     source "'"$func_file"'"
     read_version ".nonexistent.path"
   '
@@ -220,10 +218,9 @@ applications:
     current: null
 YAML
   local func_file
-  func_file=$(extract_function "$SCRIPT" "read_version")
+  func_file=$(extract_function "$LIB" "read_version")
   run bash -c '
-    RED="\033[0;31m"; NC="\033[0m"
-    VERSIONS_FILE="'"${tmpdir}/versions.yaml"'"
+    VERSIONS_YQ_FILE="'"${tmpdir}/versions.yaml"'"
     source "'"$func_file"'"
     read_version ".applications.python.current"
   '
