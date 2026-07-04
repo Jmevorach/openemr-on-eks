@@ -38,8 +38,19 @@ repos:
   # ===========================================================================
   # Python Code Quality
   # ===========================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.12
+    hooks:
+      - id: ruff-check
+        name: ruff (openemr_dr)
+        files: ^scripts/openemr_dr/
+        args: [--config, scripts/openemr_dr/pyproject.toml]
+      - id: ruff-format
+        name: ruff format (openemr_dr)
+        files: ^scripts/openemr_dr/
+
   - repo: https://github.com/psf/black
-    rev: 26.3.1
+    rev: 26.5.1
     hooks:
       - id: black
         language_version: python3
@@ -68,6 +79,7 @@ repos:
       - id: bandit
         args: ["-r", "-ll", "-ii", "-x", "tests/,**/tests/,*_test.py,test_*.py"]
         exclude: ^(tests/|test_|.*_test\.py|warp/tests/)
+        files: ^(warp/|scripts/openemr_dr/)
 
   # Gitleaks - Secret Detection (ZERO-TOLERANCE)
   - repo: https://github.com/gitleaks/gitleaks
@@ -78,7 +90,7 @@ repos:
 
   # Checkov - IaC Security Scanner (ZERO-TOLERANCE)
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.526
+    rev: 3.3.6
     hooks:
       - id: checkov
         args: [
@@ -111,7 +123,7 @@ repos:
   # Terraform Hooks
   # ===========================================================================
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.105.0
+    rev: v1.108.0
     hooks:
       - id: terraform_fmt
       - id: terraform_validate
@@ -144,7 +156,7 @@ repos:
   # Documentation and YAML
   # ===========================================================================
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.48.0
+    rev: v0.49.0
     hooks:
       - id: markdownlint
         args: ["--fix", "--config", ".markdownlint.json"]
@@ -159,7 +171,7 @@ repos:
   # Commit Message Validation
   # ===========================================================================
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.13.9
+    rev: v4.16.4
     hooks:
       - id: commitizen
         stages: [commit-msg]

@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["credential_rotation"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+# efs_editor parses OpenEMR $pass= lines; validators use verify=False for in-cluster health checks
+skips = ["B105", "B103", "B501"]

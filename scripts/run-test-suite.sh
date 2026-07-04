@@ -196,6 +196,14 @@ run_test() {
             test_bats "$test_files"
             local test_result=$?
             ;;
+        "dr_python")
+            test_dr_python "$test_files"
+            local test_result=$?
+            ;;
+        "python_requirements")
+            test_python_requirements
+            local test_result=$?
+            ;;
         *)
             record_test_result "$test_name" "SKIP" "Unknown test type: $test_type" "0"
             return
@@ -531,6 +539,50 @@ test_bats() {
     return 0
 }
 
+test_dr_python() {
+    local test_path="$1"
+
+    log_info "Running openemr_dr Python tests: $test_path"
+
+    if ! command -v python3 &> /dev/null; then
+        log_warning "python3 not installed, skipping openemr_dr tests"
+        return 0
+    fi
+
+    local tests_dir="$PROJECT_ROOT/$test_path"
+    if [[ ! -d "$tests_dir" ]]; then
+        log_warning "openemr_dr tests directory not found: $tests_dir"
+        return 0
+    fi
+
+    local output
+    if ! output=$("${PROJECT_ROOT}/scripts/run-dr-tests.sh" 2>&1); then
+        log_error "openemr_dr Python tests failed"
+        log_error "$output"
+        return 1
+    fi
+    log_info "✓ openemr_dr Python tests passed"
+    return 0
+}
+
+test_python_requirements() {
+    log_info "Validating Python requirement pins against versions.yaml"
+
+    if ! command -v yq &> /dev/null; then
+        log_warning "yq not installed, skipping Python requirements validation"
+        return 0
+    fi
+
+    local output
+    if ! output=$("${PROJECT_ROOT}/scripts/validate-python-requirements.sh" all 2>&1); then
+        log_error "Python requirements validation failed"
+        log_error "$output"
+        return 1
+    fi
+    log_info "✓ Python requirement pins match versions.yaml"
+    return 0
+}
+
 # Parse test configuration
 parse_test_config() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -619,7 +671,11 @@ run_script_tests() {
     # BATS (Bash Automated Testing System) tests for script behavior
     run_test "BATS Script Tests" "bats" "tests/bats"
 
-    # Additional script-specific tests could be added here
+    # openemr_dr Python unit tests (backup/restore/E2E orchestration)
+    run_test "OpenEMR DR Python Tests" "dr_python" "scripts/openemr_dr/tests"
+
+    # Python requirement pins vs versions.yaml
+    run_test "Python Requirements Pin Validation" "python_requirements" "versions.yaml"
 }
 
 run_documentation_tests() {

@@ -8,6 +8,9 @@
 # - Atomic certificate replacement to prevent service disruption
 # - Backup and cleanup of old certificates
 # - Proper permissions and ownership
+#
+# Mount openemr-ssl-pvc at /mnt/ssl-efs (not /etc/ssl) so openssl.cnf remains
+# available from the container image during renewal (same pattern as bootstrap).
 # =============================================================================
 
 # SSL Certificate Renewal CronJob
@@ -68,56 +71,64 @@ spec:
             args:
             - |
               set -e
+              SSL_ROOT=/mnt/ssl-efs
               echo "=== Starting SSL Certificate Renewal ==="
               echo "Timestamp: $(date)"
 
-              # Create backup of existing certificates
-              if [ -f /etc/ssl/certs/selfsigned.cert.pem ]; then
+              mkdir -p "$SSL_ROOT/certs" "$SSL_ROOT/private" "$SSL_ROOT/apache2"
+
+              OPENSSL_CNF=""
+              for c in /etc/ssl/openssl.cnf /etc/pki/tls/openssl.cnf /usr/lib/ssl/openssl.cnf; do
+                [ -f "$c" ] && OPENSSL_CNF="$c" && break
+              done
+              if [ -z "$OPENSSL_CNF" ]; then
+                OPENSSL_CNF=$(find /usr /etc -name 'openssl.cnf' 2>/dev/null | head -1)
+              fi
+              if [ -z "$OPENSSL_CNF" ] || [ ! -f "$OPENSSL_CNF" ]; then
+                echo "Could not locate openssl.cnf" >&2
+                exit 1
+              fi
+              cp "$OPENSSL_CNF" "$SSL_ROOT/openssl.cnf"
+              export OPENSSL_CONF="$SSL_ROOT/openssl.cnf"
+
+              if [ -f "$SSL_ROOT/certs/selfsigned.cert.pem" ]; then
                 echo "=== Backing up existing certificates ==="
-                cp /etc/ssl/certs/selfsigned.cert.pem /etc/ssl/certs/selfsigned.cert.pem.backup.$(date +%Y%m%d_%H%M%S)
-                cp /etc/ssl/private/selfsigned.key.pem /etc/ssl/private/selfsigned.key.pem.backup.$(date +%Y%m%d_%H%M%S)
+                cp "$SSL_ROOT/certs/selfsigned.cert.pem" "$SSL_ROOT/certs/selfsigned.cert.pem.backup.$(date +%Y%m%d_%H%M%S)"
+                cp "$SSL_ROOT/private/selfsigned.key.pem" "$SSL_ROOT/private/selfsigned.key.pem.backup.$(date +%Y%m%d_%H%M%S)"
               fi
 
-              # Generate new SSL certificates (matching OpenEMR script format)
               echo "=== Generating new SSL certificates ==="
-              openssl req -x509 -newkey rsa:4096 \
-                -keyout /etc/ssl/private/selfsigned.key.pem.new \
-                -out /etc/ssl/certs/selfsigned.cert.pem.new \
-                -days 365 -nodes \
-                -subj "/C=xx/ST=x/L=x/O=x/OU=x/CN=localhost"
+              openssl req -x509 -newkey rsa:2048 -nodes \
+                -keyout "$SSL_ROOT/private/selfsigned.key.pem.new" \
+                -out "$SSL_ROOT/certs/selfsigned.cert.pem.new" \
+                -days 365 -subj "/CN=openemr.local/O=OpenEMR"
 
-              # Verify new certificates
               echo "=== Verifying new certificates ==="
-              openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem.new -text -noout | head -20
+              openssl x509 -in "$SSL_ROOT/certs/selfsigned.cert.pem.new" -text -noout | head -20
 
-              # Atomically replace certificates
               echo "=== Installing new certificates ==="
-              mv /etc/ssl/private/selfsigned.key.pem.new /etc/ssl/private/selfsigned.key.pem
-              mv /etc/ssl/certs/selfsigned.cert.pem.new /etc/ssl/certs/selfsigned.cert.pem
+              mv "$SSL_ROOT/private/selfsigned.key.pem.new" "$SSL_ROOT/private/selfsigned.key.pem"
+              mv "$SSL_ROOT/certs/selfsigned.cert.pem.new" "$SSL_ROOT/certs/selfsigned.cert.pem"
 
-              # Recreate symbolic links (matching OpenEMR script exactly)
-              rm -f /etc/ssl/certs/webserver.cert.pem
-              rm -f /etc/ssl/private/webserver.key.pem
-              ln -s /etc/ssl/certs/selfsigned.cert.pem /etc/ssl/certs/webserver.cert.pem
-              ln -s /etc/ssl/private/selfsigned.key.pem /etc/ssl/private/webserver.key.pem
+              cd "$SSL_ROOT/certs" && ln -sf selfsigned.cert.pem webserver.cert.pem
+              cd "$SSL_ROOT/private" && ln -sf selfsigned.key.pem webserver.key.pem
+              ln -sf ../certs/selfsigned.cert.pem "$SSL_ROOT/apache2/server.pem"
+              ln -sf ../private/selfsigned.key.pem "$SSL_ROOT/apache2/server.key"
 
-              # Update marker file with timestamp
-              echo "SSL certificates renewed on $(date)" > /etc/ssl/docker-selfsigned-configured
+              echo "SSL certificates renewed on $(date)" > "$SSL_ROOT/docker-selfsigned-configured"
 
-              # Set proper permissions
-              chown -R apache:apache /etc/ssl/
-              chmod 600 /etc/ssl/private/*
-              chmod 644 /etc/ssl/certs/*
+              chown -R apache:apache "$SSL_ROOT/"
+              chmod 600 "$SSL_ROOT/private/"*
+              chmod 644 "$SSL_ROOT/certs/"*
 
-              # Clean up old backups (keep only last 5)
               echo "=== Cleaning up old certificate backups ==="
-              cd /etc/ssl/certs/
+              cd "$SSL_ROOT/certs/"
               ls -t selfsigned.cert.pem.backup.* 2>/dev/null | tail -n +6 | xargs rm -f || true
-              cd /etc/ssl/private/
+              cd "$SSL_ROOT/private/"
               ls -t selfsigned.key.pem.backup.* 2>/dev/null | tail -n +6 | xargs rm -f || true
 
               echo "=== SSL Certificate Renewal Complete ==="
-              echo "New certificate valid until: $(openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem -noout -enddate)"
+              echo "New certificate valid until: $(openssl x509 -in "$SSL_ROOT/certs/selfsigned.cert.pem" -noout -enddate)"
             resources:
               requests:
                 cpu: 100m
@@ -127,7 +138,7 @@ spec:
                 memory: 256Mi
             volumeMounts:
             - name: openemr-ssl
-              mountPath: /etc/ssl
+              mountPath: /mnt/ssl-efs
           volumes:
           - name: openemr-ssl
             persistentVolumeClaim:
@@ -185,12 +196,13 @@ spec:
         args:
         - |
           set -e
+          SSL_ROOT=/mnt/ssl-efs
           echo "=== SSL Certificate Renewal Test ==="
           echo "Current certificate info:"
-          if [ -f /etc/ssl/certs/selfsigned.cert.pem ]; then
-            openssl x509 -in /etc/ssl/certs/selfsigned.cert.pem -noout -dates
+          if [ -f "$SSL_ROOT/certs/selfsigned.cert.pem" ]; then
+            openssl x509 -in "$SSL_ROOT/certs/selfsigned.cert.pem" -noout -dates
           else
-            echo "No existing certificate found"
+            echo "No existing certificate found on openemr-ssl-pvc"
           fi
 
           echo "=== Test completed successfully ==="
@@ -203,7 +215,7 @@ spec:
             memory: 256Mi
         volumeMounts:
         - name: openemr-ssl
-          mountPath: /etc/ssl
+          mountPath: /mnt/ssl-efs
       volumes:
       - name: openemr-ssl
         persistentVolumeClaim:

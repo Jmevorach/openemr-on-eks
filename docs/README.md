@@ -45,6 +45,7 @@ This directory contains comprehensive documentation for the OpenEMR on EKS deplo
 - **`DEPLOYMENT_GUIDE.md`** - Complete deployment guide with step-by-step instructions
 - **`DEPLOYMENT_TIMINGS.md`** - Measured timing data for deployment operations and performance analysis
 - **`BACKUP_RESTORE_GUIDE.md`** - Comprehensive backup and disaster recovery procedures
+- **`DISASTER_RECOVERY_PYTHON.md`** - Python `openemr_dr` package: phased restore, tests, migration plan
 - **`AUTOSCALING_GUIDE.md`** - Autoscaling configuration and optimization guide
 - **`LOGGING_GUIDE.md`** - Logging configuration with CloudWatch and Loki integration
 - **`SECURITY_SCANNING.md`** - Comprehensive security scanning with zero-tolerance policy

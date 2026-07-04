@@ -1,0 +1,71 @@
+# OpenEMR application data restore Job
+# Placeholders substituted by restore.sh before apply.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openemr-data-restore
+  namespace: ${NAMESPACE}
+  labels:
+    app: openemr
+    component: data-restore
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: openemr
+        component: data-restore
+    spec:
+      serviceAccountName: openemr-sa
+      restartPolicy: Never
+      tolerations:
+        - key: "CriticalAddonsOnly"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: restore
+          image: openemr/openemr:${OPENEMR_VERSION}
+          command: ["/bin/sh", "/scripts/data-restore.sh"]
+          resources:
+            requests:
+              memory: "${MEMORY_REQUEST}"
+              cpu: "${CPU_REQUEST}"
+            limits:
+              memory: "${MEMORY_LIMIT}"
+              cpu: "${CPU_LIMIT}"
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: "${AWS_REGION}"
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            - name: BACKUP_BUCKET
+              value: "${BACKUP_BUCKET}"
+            - name: APP_DATA_KEY
+              value: "${APP_DATA_KEY}"
+            - name: TIMESTAMP
+              value: "${TIMESTAMP}"
+            - name: OPENEMR_VERSION
+              value: "${OPENEMR_VERSION}"
+            - name: DB_ENDPOINT
+              value: "${DB_ENDPOINT}"
+            - name: DB_USER
+              value: "${DB_USER}"
+            - name: DB_PASS
+              value: "${DB_PASS}"
+            - name: DB_NAME
+              value: "${DB_NAME}"
+          volumeMounts:
+            - name: efs-volume
+              mountPath: /mnt/efs
+            - name: restore-script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: efs-volume
+          persistentVolumeClaim:
+            claimName: openemr-sites-pvc
+        - name: restore-script
+          configMap:
+            name: openemr-data-restore-script
+            defaultMode: 0755

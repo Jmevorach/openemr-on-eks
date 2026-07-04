@@ -9,6 +9,8 @@ terraform.tfstate
 .idea/*
 backups/*
 test-results/
+.e2e-test-state
+.tools/
 
 # Python virtual environments
 .venv/
@@ -19,6 +21,25 @@ env/
 ENV/
 .test-venv/
 *.venv/
+scripts/.venv-openemr-dr/
+scripts/.venv-openemr-dr-test/
+scripts/openemr_dr/htmlcov/
+scripts/openemr_dr/.coverage
+scripts/.coverage
+warp/.test-venv/
+warp/htmlcov/
+tools/credential-rotation/.test-venv/
+tools/credential-rotation/htmlcov/
+
+# Local deployment credentials (never commit)
+k8s/openemr-credentials.txt
+
+# Local monitoring credentials and debug logs (never commit)
+monitoring/credentials/
+monitoring/debug-*.log
+monitoring/helm-install-*.log
+monitoring/openemr-monitoring*.log
+e2e-full-test.log
 
 # Python bytecode
 __pycache__/

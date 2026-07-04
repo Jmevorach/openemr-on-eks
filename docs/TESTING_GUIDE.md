@@ -250,8 +250,19 @@ This test ensures that the optional monitoring stack doesn't interfere with core
 **Running the test:**
 
 ```bash
-cd scripts
-./test-end-to-end-backup-restore.sh
+# Full test (~2.5 hours on OpenEMR 8.1.x)
+./scripts/test-end-to-end-backup-restore.sh --cluster-name openemr-eks-test
+
+# Chunked execution for development (see docs/END_TO_END_TESTING_REQUIREMENTS.md)
+./scripts/test-end-to-end-backup-restore.sh --list-groups
+./scripts/test-end-to-end-backup-restore.sh --group deploy
+./scripts/test-end-to-end-backup-restore.sh --from-step 4 --state-file .e2e-test-state
+
+# Fast in-place restore (steps 4, 8–9; skips destroy/recreate) — requires steps 1–3 done
+./scripts/run-e2e-full-test.sh --group backup-restore-inplace
+
+# Python E2E driver (same behavior; see docs/DISASTER_RECOVERY_PYTHON.md)
+cd scripts && python3 -m openemr_dr e2e --group backup-restore-inplace --cluster-name openemr-eks-test
 ```
 
 ### 6. Credential Rotation Tests
@@ -268,6 +279,29 @@ pytest tests/
 bats tests/bats/run-credential-rotation.bats
 bats tests/bats/verify-credential-rotation.bats
 ```
+
+### 7. Disaster Recovery Python Tests (`openemr_dr`)
+
+Backup, restore, and E2E orchestration are migrating to `scripts/openemr_dr/`. Unit tests cover metadata loading, checkpoint state, phase registry, and orchestrator flow **without AWS credentials**.
+
+```bash
+# All openemr_dr unit tests
+./scripts/run-dr-tests.sh
+
+# Single module
+cd scripts && PYTHONPATH=. python3 -m unittest openemr_dr.tests.test_metadata -v
+
+# Dry-run a restore phase locally
+cd scripts && python3 -m openemr_dr restore my-bucket my-snapshot --phase preflight --dry-run
+```
+
+Included in the main script validation suite:
+
+```bash
+./scripts/run-test-suite.sh -s script_validation
+```
+
+See [Disaster Recovery Python Architecture](DISASTER_RECOVERY_PYTHON.md) for the migration plan and CLI reference.
 
 ## 🚀 Running Tests
 

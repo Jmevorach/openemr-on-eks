@@ -570,6 +570,133 @@ disable_rds_deletion_protection() {
     fi
 }
 
+# Delete RDS clusters that exist in AWS but are not tracked in Terraform state.
+# Restore workflows can create Aurora clusters outside Terraform; leaving them
+# behind blocks subnet group / security group destruction during terraform destroy.
+delete_orphaned_rds_clusters() {
+    log_step "Deleting orphaned RDS clusters (not in Terraform state)..."
+
+    cd "$TERRAFORM_DIR"
+
+    local aws_clusters tf_clusters orphaned=()
+    aws_clusters=$(aws rds describe-db-clusters \
+        --region "$AWS_REGION" \
+        --query "DBClusters[?contains(DBClusterIdentifier, '$CLUSTER_NAME') && Status!='deleting'].DBClusterIdentifier" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$aws_clusters" ]; then
+        log_info "No RDS clusters found in AWS for cluster name prefix: $CLUSTER_NAME"
+        cd - >/dev/null
+        return 0
+    fi
+
+    tf_clusters=$(terraform state list 2>/dev/null | grep -E '^aws_rds_cluster\.' || echo "")
+
+    for cluster_id in $aws_clusters; do
+        local managed=false
+        if [ -n "$tf_clusters" ]; then
+            for tf_resource in $tf_clusters; do
+                local tf_cluster_id
+                tf_cluster_id=$(terraform state show -no-color "$tf_resource" 2>/dev/null \
+                    | awk -F' = ' '/^  cluster_identifier / {print $2; exit}' \
+                    | tr -d '"')
+                if [ "$tf_cluster_id" = "$cluster_id" ]; then
+                    managed=true
+                    break
+                fi
+            done
+        fi
+
+        if [ "$managed" = true ]; then
+            log_info "RDS cluster $cluster_id is managed by Terraform — skipping AWS delete"
+        else
+            orphaned+=("$cluster_id")
+        fi
+    done
+
+    if [ ${#orphaned[@]} -eq 0 ]; then
+        log_info "No orphaned RDS clusters to delete"
+        cd - >/dev/null
+        return 0
+    fi
+
+    for cluster_id in "${orphaned[@]}"; do
+        log_info "Deleting orphaned RDS cluster: $cluster_id"
+
+        local db_instances
+        db_instances=$(aws rds describe-db-instances \
+            --region "$AWS_REGION" \
+            --query "DBInstances[?DBClusterIdentifier=='$cluster_id'].DBInstanceIdentifier" \
+            --output text 2>/dev/null || echo "")
+
+        for instance_id in $db_instances; do
+            log_info "Deleting RDS instance: $instance_id"
+            safe_aws "delete RDS instance: $instance_id" \
+                aws rds delete-db-instance \
+                    --db-instance-identifier "$instance_id" \
+                    --skip-final-snapshot \
+                    --region "$AWS_REGION" \
+                    --no-cli-pager || return 1
+        done
+
+        if [ -n "$db_instances" ]; then
+            log_info "Waiting for RDS instances in $cluster_id to finish deleting..."
+            local max_wait=900 elapsed=0
+            while [ $elapsed -lt $max_wait ]; do
+                local remaining
+                remaining=$(aws rds describe-db-instances \
+                    --region "$AWS_REGION" \
+                    --query "DBInstances[?DBClusterIdentifier=='$cluster_id'].DBInstanceIdentifier" \
+                    --output text 2>/dev/null || echo "")
+                if [ -z "$remaining" ]; then
+                    log_success "All instances deleted for cluster $cluster_id"
+                    break
+                fi
+                sleep 15
+                elapsed=$((elapsed + 15))
+            done
+            if [ $elapsed -ge $max_wait ]; then
+                log_error "Timed out waiting for RDS instances in $cluster_id to delete"
+                cd - >/dev/null
+                return 1
+            fi
+        fi
+
+        safe_aws "delete RDS cluster: $cluster_id" \
+            aws rds delete-db-cluster \
+                --db-cluster-identifier "$cluster_id" \
+                --skip-final-snapshot \
+                --region "$AWS_REGION" \
+                --no-cli-pager || return 1
+
+        log_info "Waiting for cluster $cluster_id to finish deleting..."
+        local max_cluster_wait=900 cluster_elapsed=0
+        while [ $cluster_elapsed -lt $max_cluster_wait ]; do
+            local cluster_status
+            cluster_status=$(aws rds describe-db-clusters \
+                --db-cluster-identifier "$cluster_id" \
+                --region "$AWS_REGION" \
+                --query "DBClusters[0].Status" \
+                --output text 2>/dev/null || echo "not-found")
+            if [ "$cluster_status" = "not-found" ] || [ "$cluster_status" = "None" ]; then
+                log_success "Orphaned RDS cluster deleted: $cluster_id"
+                break
+            fi
+            sleep 15
+            cluster_elapsed=$((cluster_elapsed + 15))
+        done
+        if [ $cluster_elapsed -ge $max_cluster_wait ]; then
+            log_error "Timed out waiting for RDS cluster $cluster_id to delete"
+            cd - >/dev/null
+            return 1
+        fi
+    done
+
+    cd - >/dev/null
+    log_success "Orphaned RDS cluster cleanup complete"
+    return 0
+}
+
 
 # =============================================================================
 # S3 CLEANUP
@@ -1696,6 +1823,7 @@ show_help() {
     echo "WHAT THIS SCRIPT DOES:"
     echo "    • Deletes all snapshots to prevent automatic restoration"
     echo "    • Disables RDS deletion protection for clean terraform destroy"
+    echo "    • Deletes restore-created RDS clusters not tracked in Terraform state"
     echo "    • Handles S3 bucket versioning issues (delete markers, versions)"
     echo "    • Cleans up AWS Backup resources (selections, plans, vaults, recovery points, IAM)"
     echo "    • Runs terraform destroy (handles ElastiCache, EKS, and other resources)"
@@ -1781,6 +1909,14 @@ main() {
         log_error "Failed to disable RDS deletion protection"
         log_error "Cannot proceed with Terraform destroy - RDS clusters are still protected"
         log_error "Please manually disable deletion protection in the AWS console and retry"
+        exit 1
+    fi
+
+    # Restore-created Aurora clusters may not be in Terraform state; delete them
+    # via AWS API so subnet groups and security groups can be destroyed cleanly.
+    if ! delete_orphaned_rds_clusters; then
+        log_error "Failed to delete orphaned RDS clusters"
+        log_error "Cannot proceed with Terraform destroy while orphaned RDS exists"
         exit 1
     fi
     

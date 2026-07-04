@@ -37,29 +37,29 @@ output "cluster_name" {
 
 output "aurora_endpoint" {
   description = "Aurora cluster endpoint"
-  value       = aws_rds_cluster.openemr.endpoint
+  value       = try(aws_rds_cluster.openemr[0].endpoint, "pending-restore")
   sensitive   = true
 }
 
 output "aurora_reader_endpoint" {
   description = "Aurora cluster reader endpoint"
-  value       = aws_rds_cluster.openemr.reader_endpoint
+  value       = try(aws_rds_cluster.openemr[0].reader_endpoint, "pending-restore")
   sensitive   = true
 }
 
 output "aurora_port" {
   description = "Aurora cluster port"
-  value       = aws_rds_cluster.openemr.port
+  value       = try(aws_rds_cluster.openemr[0].port, 3306)
 }
 
 output "aurora_engine_version" {
   description = "Aurora cluster engine version"
-  value       = aws_rds_cluster.openemr.engine_version
+  value       = try(aws_rds_cluster.openemr[0].engine_version, var.rds_engine_version)
 }
 
 output "aurora_cluster_id" {
-  description = "Aurora cluster identifier"
-  value       = aws_rds_cluster.openemr.cluster_identifier
+  description = "Aurora cluster identifier (always known for restore.sh)"
+  value       = local.aurora_cluster_id
 }
 
 output "aurora_db_subnet_group_name" {
@@ -242,7 +242,7 @@ output "alertmanager_s3_role_arn" {
 # and monitoring capabilities.
 
 output "cloudwatch_log_groups" {
-  description = "CloudWatch log group names for OpenEMR 8.1.0"
+  description = "CloudWatch log group names for OpenEMR 8.1.1"
   value = {
     application    = aws_cloudwatch_log_group.openemr_app.name
     access         = aws_cloudwatch_log_group.openemr_access.name

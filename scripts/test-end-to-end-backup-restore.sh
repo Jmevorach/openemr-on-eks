@@ -47,13 +47,12 @@
 #
 # Notes:
 #   ⚠️  WARNING: This is a destructive test that creates and destroys AWS
-#   resources. Only run in development/testing environments. Takes 160-165 minutes
-#   (~2.7 hours). Measured timings from successful runs: Infrastructure deployment
-#   30-32 min, Application deployment 7-11 min (can spike to 19 min), Backup
-#   ~30-35 sec, Monitoring stack test ~6-7 min (updated Nov 2025 with S3 storage),
-#   Infrastructure deletion 13-16 min, Infrastructure recreation 40-42 min, 
-#   Restore 38-43 min, Final cleanup 13-14 min.
-#   Total: 160-165 min (2.7 hours).
+#   resources. Only run in development/testing environments. Takes ~150-160 minutes
+#   (~2.5 hours) on OpenEMR 8.1.x. Measured timings: Infrastructure deployment
+#   30-32 min, Application deployment 3-6 min (8.1.x; can spike to ~10 min), Backup
+#   ~30-35 sec, Monitoring stack test ~6-7 min, Infrastructure deletion 13-16 min,
+#   Infrastructure recreation 40-42 min, Restore 38-43 min, Final cleanup 13-14 min.
+#   Deploy chunk (steps 1-3): ~35-40 min cold start, ~10-15 min when infra already exists.
 #
 # Examples:
 #   ./test-end-to-end-backup-restore.sh
@@ -114,6 +113,34 @@ BACKUP_BUCKET_CREATED=""     # Name of backup bucket created during test
 SNAPSHOT_ID_CREATED=""       # ID of snapshot created during test
 CLEANUP_REQUIRED=false       # Flag indicating if cleanup is needed
 
+# Chunked step execution (run subsets of the 10-step E2E flow for faster iteration)
+FROM_STEP=1
+TO_STEP=10
+LAST_COMPLETED_STEP=0
+STEP_GROUP=""
+LIST_STEPS=false
+LIST_GROUPS=false
+SKIP_RESTORE_DEFAULTS=false
+NO_EMERGENCY_CLEANUP=false
+SKIP_ORPHAN_CHECK=false
+SKIP_STEPS=""                # Space-separated step numbers to skip (e.g. "5 6 7" for inplace restore)
+STATE_FILE=""                # Defaults to ${PROJECT_ROOT}/.e2e-test-state after get_directories
+PRESERVE_INFRA_ON_FAILURE=false  # Skip emergency destroy when restore prerequisites are missing
+TOTAL_STEPS=10
+
+# Step metadata for --list-steps / --list-groups
+E2E_STEP_NAMES=(
+    "Deploy infrastructure"
+    "Deploy OpenEMR"
+    "Deploy test data"
+    "Backup installation"
+    "Test monitoring stack"
+    "Delete infrastructure"
+    "Recreate infrastructure"
+    "Restore from backup"
+    "Verify restoration"
+    "Final cleanup"
+)
 
 # Emergency cleanup function for when tests fail
 # This function is called on script exit to clean up resources created during testing
@@ -127,6 +154,14 @@ emergency_cleanup() {
         return 0
     fi
 
+    if [ "${NO_EMERGENCY_CLEANUP:-false}" = "true" ]; then
+        echo ""
+        log_warning "Emergency cleanup skipped (--no-emergency-cleanup). AWS resources may remain."
+        log_info "Resume with: $0 --from-step N --state-file ${STATE_FILE:-.e2e-test-state}"
+        print_test_results
+        exit $exit_code
+    fi
+
     echo ""
     log_error "🚨 TEST FAILED - PERFORMING EMERGENCY CLEANUP 🚨"
     echo ""
@@ -138,8 +173,13 @@ emergency_cleanup() {
         local cleanup_start
         cleanup_start=$(start_timer)
 
-        # Try to clean up infrastructure if it was created
-        if [ "$INFRASTRUCTURE_CREATED" = "true" ]; then
+        # Skip infrastructure teardown when restore prerequisites are missing — destroying
+        # infra here wastes ~30 min of recreate time and does not fix a missing snapshot/bucket.
+        if [ "$PRESERVE_INFRA_ON_FAILURE" = "true" ]; then
+            log_warning "Restore prerequisites missing — preserving infrastructure and backup artifacts"
+            log_info "Create a new backup (steps 1-4), then resume with steps 6-10"
+            log_info "Or run ./scripts/destroy.sh --force manually if you want to tear down now"
+        elif [ "$INFRASTRUCTURE_CREATED" = "true" ]; then
             log_info "Attempting to clean up AWS infrastructure using destroy.sh script..."
 
             # Change to project root directory
@@ -147,9 +187,11 @@ emergency_cleanup() {
                 # Export cluster name and region for destroy.sh script
                 export CLUSTER_NAME="$CLUSTER_NAME"
                 export AWS_REGION="$AWS_REGION"
-                
+                # Preserve E2E backup snapshots so a failed restore step can be retried
+                export PRESERVE_BACKUP_SNAPSHOTS="true"
+
                 # Use the comprehensive destroy.sh script for emergency cleanup
-                log_info "Running destroy.sh script for emergency cleanup..."
+                log_info "Running destroy.sh script for emergency cleanup (backup snapshots preserved)..."
                 if ./scripts/destroy.sh --force 2>/dev/null; then
                     log_success "Infrastructure destroyed successfully using destroy.sh during emergency cleanup"
                 else
@@ -161,19 +203,7 @@ emergency_cleanup() {
             fi
         fi
 
-        # Clean up backup resources if they were created
-        if [ -n "$BACKUP_BUCKET_CREATED" ]; then
-            log_info "Attempting to clean up backup bucket: $BACKUP_BUCKET_CREATED"
-            empty_s3_bucket "$BACKUP_BUCKET_CREATED" "$AWS_REGION" || log_warning "Failed to clean up backup bucket"
-        fi
-
-        # Clean up RDS snapshots if they were created
-        if [ -n "$SNAPSHOT_ID_CREATED" ]; then
-            log_info "Attempting to clean up RDS snapshot: $SNAPSHOT_ID_CREATED"
-            aws rds delete-db-cluster-snapshot \
-                --db-cluster-snapshot-identifier "$SNAPSHOT_ID_CREATED" \
-                --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete RDS snapshot"
-        fi
+        # Backup bucket and RDS snapshots are cleaned up in step 10 only — never here
 
         local cleanup_duration
         cleanup_duration=$(get_duration "$cleanup_start")
@@ -210,51 +240,57 @@ manual_resource_cleanup() {
         aws eks delete-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete EKS cluster"
     fi
 
-    # Try to delete RDS cluster and instances - get actual cluster identifier from Terraform
-    local rds_cluster
-    rds_cluster=$(terraform output -raw aurora_cluster_id 2>/dev/null || echo "")
-    
-    if [ -z "$rds_cluster" ]; then
-        log_info "No RDS cluster found in Terraform state, skipping RDS cleanup"
+    # Try to delete RDS clusters matching the test cluster name (restore may create
+    # Aurora outside Terraform state, so do not rely on terraform output alone).
+    local rds_clusters
+    rds_clusters=$(aws rds describe-db-clusters \
+        --region "$AWS_REGION" \
+        --query "DBClusters[?contains(DBClusterIdentifier, '$CLUSTER_NAME') && Status!='deleting'].DBClusterIdentifier" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$rds_clusters" ]; then
+        log_info "No RDS clusters found matching cluster name: $CLUSTER_NAME"
         return 0
     fi
-    
-    if aws rds describe-db-clusters --db-cluster-identifier "$rds_cluster" --region "$AWS_REGION" >/dev/null 2>&1; then
-        log_info "Disabling deletion protection for RDS cluster: $rds_cluster"
-        aws rds modify-db-cluster --db-cluster-identifier "$rds_cluster" --no-deletion-protection --region "$AWS_REGION" 2>/dev/null || true
 
-        # First, delete all DB instances in the cluster
-        log_info "Deleting RDS instances in cluster: $rds_cluster"
-        local db_instances
-        db_instances=$(aws rds describe-db-instances --region "$AWS_REGION" --query "DBInstances[?contains(DBClusterIdentifier, '$rds_cluster')].DBInstanceIdentifier" --output text 2>/dev/null || echo "")
+    for rds_cluster in $rds_clusters; do
+        if aws rds describe-db-clusters --db-cluster-identifier "$rds_cluster" --region "$AWS_REGION" >/dev/null 2>&1; then
+            log_info "Disabling deletion protection for RDS cluster: $rds_cluster"
+            aws rds modify-db-cluster --db-cluster-identifier "$rds_cluster" --no-deletion-protection --region "$AWS_REGION" 2>/dev/null || true
 
-        if [ -n "$db_instances" ]; then
-            for instance in $db_instances; do
-                log_info "Deleting RDS instance: $instance"
-                aws rds delete-db-instance --db-instance-identifier "$instance" --skip-final-snapshot --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete RDS instance: $instance"
-            done
+            # First, delete all DB instances in the cluster
+            log_info "Deleting RDS instances in cluster: $rds_cluster"
+            local db_instances
+            db_instances=$(aws rds describe-db-instances --region "$AWS_REGION" --query "DBInstances[?DBClusterIdentifier=='$rds_cluster'].DBInstanceIdentifier" --output text 2>/dev/null || echo "")
 
-            # Wait for instances to be deleted before deleting cluster
-            log_info "Waiting for RDS instances to be deleted..."
-            local wait_time=300  # 5 minutes
-            local elapsed=0
-            while [ $elapsed -lt $wait_time ]; do
-                local remaining_instances
-                remaining_instances=$(aws rds describe-db-instances --region "$AWS_REGION" --query "DBInstances[?contains(DBClusterIdentifier, '$rds_cluster')].DBInstanceIdentifier" --output text 2>/dev/null || echo "")
-                if [ -z "$remaining_instances" ]; then
-                    log_success "All RDS instances deleted"
-                    break
-                fi
-                log_info "Waiting for RDS instances to be deleted... (${elapsed}s elapsed)"
-                sleep 30
-                elapsed=$((elapsed + 30))
-            done
+            if [ -n "$db_instances" ]; then
+                for instance in $db_instances; do
+                    log_info "Deleting RDS instance: $instance"
+                    aws rds delete-db-instance --db-instance-identifier "$instance" --skip-final-snapshot --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete RDS instance: $instance"
+                done
+
+                # Wait for instances to be deleted before deleting cluster
+                log_info "Waiting for RDS instances to be deleted..."
+                local wait_time=300  # 5 minutes
+                local elapsed=0
+                while [ $elapsed -lt $wait_time ]; do
+                    local remaining_instances
+                    remaining_instances=$(aws rds describe-db-instances --region "$AWS_REGION" --query "DBInstances[?DBClusterIdentifier=='$rds_cluster'].DBInstanceIdentifier" --output text 2>/dev/null || echo "")
+                    if [ -z "$remaining_instances" ]; then
+                        log_success "All RDS instances deleted"
+                        break
+                    fi
+                    log_info "Waiting for RDS instances to be deleted... (${elapsed}s elapsed)"
+                    sleep 30
+                    elapsed=$((elapsed + 30))
+                done
+            fi
+
+            # Now delete the cluster
+            log_info "Deleting RDS cluster: $rds_cluster"
+            aws rds delete-db-cluster --db-cluster-identifier "$rds_cluster" --skip-final-snapshot --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete RDS cluster"
         fi
-
-        # Now delete the cluster
-        log_info "Deleting RDS cluster: $rds_cluster"
-        aws rds delete-db-cluster --db-cluster-identifier "$rds_cluster" --skip-final-snapshot --region "$AWS_REGION" 2>/dev/null || log_warning "Failed to delete RDS cluster"
-    fi
+    done
 
     # Try to delete VPC and related resources
     log_info "Attempting to clean up VPC and networking resources..."
@@ -266,6 +302,156 @@ manual_resource_cleanup() {
 
 # Set up trap handler for emergency cleanup
 trap 'emergency_cleanup' ERR EXIT
+
+# Persist test state between chunked runs (backup bucket, snapshot ID, etc.)
+get_default_state_file() {
+    echo "${PROJECT_ROOT}/.e2e-test-state"
+}
+
+save_e2e_state() {
+    local state_path="${STATE_FILE:-$(get_default_state_file)}"
+    {
+        echo "# OpenEMR E2E test state — auto-generated; do not commit"
+        printf 'TEST_TIMESTAMP=%q\n' "$TEST_TIMESTAMP"
+        printf 'BACKUP_BUCKET=%q\n' "$BACKUP_BUCKET"
+        printf 'SNAPSHOT_ID=%q\n' "$SNAPSHOT_ID"
+        printf 'BACKUP_BUCKET_CREATED=%q\n' "$BACKUP_BUCKET_CREATED"
+        printf 'SNAPSHOT_ID_CREATED=%q\n' "$SNAPSHOT_ID_CREATED"
+        printf 'INFRASTRUCTURE_CREATED=%q\n' "$INFRASTRUCTURE_CREATED"
+        printf 'CLEANUP_REQUIRED=%q\n' "$CLEANUP_REQUIRED"
+        printf 'PROOF_FILE_CONTENT=%q\n' "$PROOF_FILE_CONTENT"
+        printf 'CLUSTER_NAME=%q\n' "$CLUSTER_NAME"
+        printf 'AWS_REGION=%q\n' "$AWS_REGION"
+        printf 'NAMESPACE=%q\n' "$NAMESPACE"
+        printf 'LAST_COMPLETED_STEP=%q\n' "$LAST_COMPLETED_STEP"
+    } > "$state_path"
+    log_info "Saved E2E state to: $state_path"
+}
+
+load_e2e_state() {
+    local state_path="${STATE_FILE:-$(get_default_state_file)}"
+    if [ ! -f "$state_path" ]; then
+        log_error "State file not found: $state_path"
+        log_info "Run earlier steps first, e.g.: $0 --group deploy"
+        return 1
+    fi
+
+    log_info "Loading E2E state from: $state_path"
+    # shellcheck disable=SC1090
+    source "$state_path"
+
+    if [ -z "${BACKUP_BUCKET:-}" ] && [ "$FROM_STEP" -le 9 ] && [ "$TO_STEP" -ge 8 ]; then
+        log_error "BACKUP_BUCKET missing from state file (required for restore steps)"
+        return 1
+    fi
+    if [ -z "${SNAPSHOT_ID:-}" ] && [ "$FROM_STEP" -le 9 ] && [ "$TO_STEP" -ge 8 ]; then
+        log_error "SNAPSHOT_ID missing from state file (required for restore steps)"
+        return 1
+    fi
+
+    log_success "E2E state loaded (last completed step: ${LAST_COMPLETED_STEP:-0})"
+
+    # Restore steps need backup artifacts; cleanup-only runs (step 10) do not.
+    if [ "$FROM_STEP" -le 9 ] && [ "$TO_STEP" -ge 8 ]; then
+        validate_restore_artifacts || return 1
+    fi
+
+    return 0
+}
+
+resolve_step_group() {
+    case "$STEP_GROUP" in
+        full)           FROM_STEP=1;  TO_STEP=10 ;;
+        deploy)         FROM_STEP=1;  TO_STEP=3  ;;
+        backup)         FROM_STEP=4;  TO_STEP=4  ;;
+        monitoring)     FROM_STEP=5;  TO_STEP=5  ;;
+        destroy)        FROM_STEP=6;  TO_STEP=6  ;;
+        recreate)       FROM_STEP=7;  TO_STEP=7  ;;
+        restore)        FROM_STEP=8;  TO_STEP=9  ;;
+        cleanup)        FROM_STEP=10; TO_STEP=10 ;;
+        backup-restore) FROM_STEP=4;  TO_STEP=9  ;;
+        backup-restore-inplace) FROM_STEP=4; TO_STEP=9; SKIP_STEPS="5 6 7" ;;
+        infrastructure) FROM_STEP=1;  TO_STEP=1  ;;
+        openemr)        FROM_STEP=2;  TO_STEP=2  ;;
+        test-data)      FROM_STEP=3;  TO_STEP=3  ;;
+        verify)         FROM_STEP=9;  TO_STEP=9  ;;
+        *)
+            log_error "Unknown step group: $STEP_GROUP"
+            list_step_groups
+            exit 1
+            ;;
+    esac
+}
+
+list_step_groups() {
+    echo "Available step groups:"
+    echo "  full            Run all 10 steps (default)"
+    echo "  deploy          Steps 1-3: infrastructure, OpenEMR, test data"
+    echo "  backup          Step 4: create backup"
+    echo "  monitoring      Step 5: monitoring stack install/uninstall"
+    echo "  destroy         Step 6: delete infrastructure (preserves backup)"
+    echo "  recreate        Step 7: recreate infrastructure"
+    echo "  restore         Steps 8-9: restore and verify"
+    echo "  cleanup         Step 10: final cleanup"
+    echo "  backup-restore  Steps 4-9: backup through verification"
+    echo "  backup-restore-inplace  Steps 4,8-9: in-place restore (skip destroy/recreate; ~45-60 min)"
+    echo "  infrastructure  Step 1 only"
+    echo "  openemr         Step 2 only"
+    echo "  test-data       Step 3 only"
+    echo "  verify          Step 9 only"
+}
+
+list_e2e_steps() {
+    local i
+    echo "E2E test steps:"
+    for i in $(seq 1 "$TOTAL_STEPS"); do
+        echo "  Step $i: ${E2E_STEP_NAMES[$((i - 1))]}"
+    done
+    echo ""
+    list_step_groups
+}
+
+should_run_step() {
+    local step_num="$1"
+    if [ "$step_num" -lt "$FROM_STEP" ] || [ "$step_num" -gt "$TO_STEP" ]; then
+        return 1
+    fi
+    if [ -n "$SKIP_STEPS" ]; then
+        for skip in $SKIP_STEPS; do
+            if [ "$step_num" -eq "$skip" ]; then
+                return 1
+            fi
+        done
+    fi
+    return 0
+}
+
+run_e2e_step() {
+    local step_num="$1"
+    local step_func="$2"
+    local step_label="${E2E_STEP_NAMES[$((step_num - 1))]}"
+    local step_start
+
+    if ! should_run_step "$step_num"; then
+        log_info "Skipping step $step_num: $step_label (running steps $FROM_STEP-$TO_STEP)"
+        return 0
+    fi
+
+    step_start=$(start_timer)
+    log_step "Step $step_num/$TOTAL_STEPS: $step_label"
+    if ! "$step_func"; then
+        local step_duration
+        step_duration=$(get_duration "$step_start")
+        add_test_result "$step_label" "FAILED" "Step $step_num failed" "$step_duration"
+        log_error "Step $step_num failed: $step_label"
+        print_test_results
+        exit 1
+    fi
+
+    LAST_COMPLETED_STEP=$step_num
+    save_e2e_state
+    return 0
+}
 
 # Parse command line arguments
 parse_arguments() {
@@ -283,6 +469,47 @@ parse_arguments() {
                 NAMESPACE="$2"
                 shift 2
                 ;;
+            --from-step)
+                FROM_STEP="$2"
+                shift 2
+                ;;
+            --to-step)
+                TO_STEP="$2"
+                shift 2
+                ;;
+            --step)
+                FROM_STEP="$2"
+                TO_STEP="$2"
+                shift 2
+                ;;
+            --group)
+                STEP_GROUP="$2"
+                shift 2
+                ;;
+            --state-file)
+                STATE_FILE="$2"
+                shift 2
+                ;;
+            --skip-orphan-check)
+                SKIP_ORPHAN_CHECK=true
+                shift
+                ;;
+            --skip-restore-defaults)
+                SKIP_RESTORE_DEFAULTS=true
+                shift
+                ;;
+            --no-emergency-cleanup)
+                NO_EMERGENCY_CLEANUP=true
+                shift
+                ;;
+            --list-steps)
+                LIST_STEPS=true
+                shift
+                ;;
+            --list-groups)
+                LIST_GROUPS=true
+                shift
+                ;;
             --help)
                 show_help
                 ;;
@@ -293,6 +520,17 @@ parse_arguments() {
                 ;;
         esac
     done
+
+    if [ -n "$STEP_GROUP" ]; then
+        resolve_step_group
+    fi
+
+    if [ "$FROM_STEP" -lt 1 ] || [ "$FROM_STEP" -gt "$TOTAL_STEPS" ] || \
+       [ "$TO_STEP" -lt 1 ] || [ "$TO_STEP" -gt "$TOTAL_STEPS" ] || \
+       [ "$FROM_STEP" -gt "$TO_STEP" ]; then
+        log_error "Invalid step range: --from-step $FROM_STEP --to-step $TO_STEP (valid: 1-$TOTAL_STEPS)"
+        exit 1
+    fi
 }
 
 
@@ -492,17 +730,34 @@ show_help() {
     echo "10. Clean up infrastructure and backups"
     echo ""
     echo "Options:"
-    echo "  --cluster-name NAME     EKS cluster name (default: openemr-eks-test)"
-    echo "  --aws-region REGION     AWS region (default: us-west-2)"
-    echo "  --namespace NAMESPACE   Kubernetes namespace (default: openemr)"
-    echo "  --help                  Show this help message"
+    echo "  --cluster-name NAME       EKS cluster name (default: openemr-eks-test)"
+    echo "  --aws-region REGION       AWS region (default: us-west-2)"
+    echo "  --namespace NAMESPACE     Kubernetes namespace (default: openemr)"
+    echo ""
+    echo "Chunked execution (run subsets for faster iteration during development):"
+    echo "  --from-step N             First step to run (1-10, default: 1)"
+    echo "  --to-step N               Last step to run (1-10, default: 10)"
+    echo "  --step N                  Run a single step (same as --from-step N --to-step N)"
+    echo "  --group NAME              Run a predefined step group (see --list-groups)"
+    echo "  --state-file PATH         Persist/load state between chunks (default: .e2e-test-state)"
+    echo "  --skip-orphan-check       Allow existing cluster/resources (resume after partial deploy)"
+    echo "  --skip-restore-defaults   Skip k8s manifest reset (use when resuming mid-test)"
+    echo "  --no-emergency-cleanup    On failure, leave AWS resources for debugging"
+    echo "  --list-steps              List all steps and exit"
+    echo "  --list-groups             List step groups and exit"
+    echo "  --help                    Show this help message"
     echo ""
     echo "Environment Variables:"
     echo "  CLUSTER_NAME            EKS cluster name"
     echo "  AWS_REGION              AWS region"
     echo "  NAMESPACE               Kubernetes namespace"
     echo ""
-    echo "Example:"
+    echo "Examples:"
+    echo "  $0                                              # Full 10-step test"
+    echo "  $0 --group deploy                               # Steps 1-3 only"
+    echo "  $0 --step 5                                     # Monitoring stack test only"
+    echo "  $0 --group restore --no-emergency-cleanup       # Restore/verify; keep infra on failure"
+    echo "  $0 --from-step 8 --to-step 9 --state-file .e2e-test-state"
     echo "  $0 --cluster-name my-test-cluster --aws-region us-east-1"
     echo ""
     echo "⚠️  WARNING: This script will create and destroy AWS resources!"
@@ -533,6 +788,11 @@ check_prerequisites() {
 
 # Check for orphaned resources from previous test runs
 check_for_orphaned_resources() {
+    if [ "${SKIP_ORPHAN_CHECK:-false}" = "true" ]; then
+        log_warning "Skipping orphan resource check (--skip-orphan-check)"
+        return 0
+    fi
+
     log_info "Checking for orphaned resources from previous test runs..."
     
     local orphaned_found=false
@@ -897,14 +1157,32 @@ deploy_infrastructure() {
 
     # Initialize Terraform
     log_info "Initializing Terraform..."
-    terraform init
+    if ! terraform init -upgrade; then
+        log_error "Terraform init failed"
+        return 1
+    fi
+
+    # Remove stale plan file (version/cluster mismatches cause silent apply failures)
+    rm -f tfplan
 
     # Plan and apply infrastructure
     log_info "Planning infrastructure deployment..."
-    terraform plan -var="cluster_name=$CLUSTER_NAME" -var="aws_region=$AWS_REGION" -out=tfplan
+    if ! terraform plan -var="cluster_name=$CLUSTER_NAME" -var="aws_region=$AWS_REGION" -out=tfplan; then
+        log_error "Terraform plan failed"
+        return 1
+    fi
 
     log_info "Applying infrastructure deployment..."
-    terraform apply -auto-approve tfplan
+    if ! terraform apply -auto-approve tfplan; then
+        log_error "Terraform apply failed"
+        return 1
+    fi
+
+    # Confirm the EKS cluster actually exists (guards against stale state false positives)
+    if ! aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+        log_error "EKS cluster '$CLUSTER_NAME' not found after Terraform apply"
+        return 1
+    fi
 
     # Wait for infrastructure to be ready
     log_info "Waiting for infrastructure to be ready..."
@@ -982,7 +1260,7 @@ deploy_openemr() {
 
     # Wait for deployment to be ready with extended timeout
     # The deploy script may trigger a rolling restart, so we need to wait for it to complete
-    log_info "Waiting for OpenEMR deployment to be ready (this may take 7-15 minutes after rolling restart)..."
+    log_info "Waiting for OpenEMR deployment to be ready (typically 3-8 min on OpenEMR 8.1.x)..."
     
     # First, wait for deployment to exist
     log_info "Validating OpenEMR deployment exists..."
@@ -993,8 +1271,8 @@ deploy_openemr() {
     log_success "OpenEMR deployment found"
     
     # Wait for the rollout to complete (handles rolling restarts properly)
-    log_info "Waiting for deployment rollout to complete (up to 20 minutes)..."
-    if kubectl rollout status deployment/openemr -n "$NAMESPACE" --timeout=1200s 2>&1; then
+    log_info "Waiting for deployment rollout to complete (timeout: 15 minutes)..."
+    if kubectl rollout status deployment/openemr -n "$NAMESPACE" --timeout=900s 2>&1; then
         log_success "Deployment rollout completed successfully"
     else
         log_warning "Deployment rollout status command timed out, checking if pods are ready anyway..."
@@ -1223,10 +1501,10 @@ deploy_test_data() {
 
     # Wait for pod to be ready (both containers) - with progress feedback
     log_info "Waiting for pod to be fully ready (both containers)..."
-    log_info "This may take 15-20 minutes for OpenEMR containers to fully start..."
+    log_info "OpenEMR 8.1.x typically ready in 3-6 minutes..."
 
     # Use a more robust wait with progress feedback
-    local wait_timeout=2400 # 40 minutes
+    local wait_timeout=1200 # 20 minutes (ceiling; 8.1.x usually much faster)
     local check_interval=30 # Check every 30 seconds
     local elapsed=0
 
@@ -1257,10 +1535,10 @@ deploy_test_data() {
     log_info "========================================="
     log_info "Waiting for OpenEMR swarm mode initialization to complete..."
     log_info "This prevents test data from being overwritten during swarm init"
-    log_info "May take 10-15 minutes for database setup on fresh deployments"
+    log_info "May take 5-10 minutes for database setup on fresh deployments (8.1.x is faster)"
     log_info "========================================="
     
-    local swarm_max_wait=1200  # 20 minutes (allows for database setup)
+    local swarm_max_wait=900  # 15 minutes (ceiling)
     local swarm_elapsed=0
     local swarm_check_interval=10
     local swarm_complete=false
@@ -1311,8 +1589,8 @@ deploy_test_data() {
     
     # Additional wait for OpenEMR application to be responsive
     log_info "Waiting for OpenEMR application to be responsive..."
-    log_info "This may take 25-30 minutes for OpenEMR to fully initialize..."
-    local max_attempts=120  # Increased to 120 attempts (20 minutes) for better reliability
+    log_info "OpenEMR 8.1.x is typically responsive within a few minutes..."
+    local max_attempts=72  # 72 × 10s = 12 minutes (ceiling)
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
@@ -1955,9 +2233,9 @@ recreate_infrastructure() {
 
     # Plan and apply infrastructure
     log_info "Planning infrastructure recreation..."
-    terraform plan -var="cluster_name=$CLUSTER_NAME" -var="aws_region=$AWS_REGION" -out=tfplan
+    terraform plan -var="cluster_name=$CLUSTER_NAME" -var="aws_region=$AWS_REGION" -var="skip_rds_creation=true" -out=tfplan
 
-    log_info "Applying infrastructure recreation..."
+    log_info "Applying infrastructure recreation (RDS deferred to restore step)..."
     terraform apply -auto-approve tfplan
 
     # Wait for infrastructure to be ready
@@ -1967,6 +2245,10 @@ recreate_infrastructure() {
     # Update kubectl context to point to the new cluster
     log_info "Updating kubectl context to point to the new cluster..."
     aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME"
+
+    # EFS CSI add-on starts before Pod Identity association in the same apply.
+    log_info "Ensuring EFS CSI driver has Pod Identity credentials..."
+    ./scripts/ensure-efs-csi-ready.sh
 
     # Get outputs
     log_info "Getting Terraform outputs..."
@@ -1978,9 +2260,8 @@ recreate_infrastructure() {
     INFRASTRUCTURE_CREATED=true
     CLEANUP_REQUIRED=true
 
-    # Deploy OpenEMR after recreating infrastructure
-    log_info "Deploying OpenEMR after infrastructure recreation..."
-    deploy_openemr "restore"
+    # OpenEMR deploy is handled by restore.sh in step 8 (deploy here was redundant and
+    # added ~15 min before restore wiped and redeployed everything anyway).
 
     # Note: We do NOT create a new backup here - we use the original backup from step 4
     # The BACKUP_BUCKET and SNAPSHOT_ID variables should still be available from the backup_installation step
@@ -1992,6 +2273,49 @@ recreate_infrastructure() {
     cd "$PROJECT_ROOT"
 }
 
+# Validate that backup artifacts referenced in state still exist in AWS
+validate_restore_artifacts() {
+    log_info "Validating restore prerequisites..."
+
+    local failed=false
+
+    if [ -z "${BACKUP_BUCKET:-}" ] || [ -z "${SNAPSHOT_ID:-}" ]; then
+        log_error "BACKUP_BUCKET and SNAPSHOT_ID must be set (check state file)"
+        failed=true
+    else
+        if ! aws s3 ls "s3://${BACKUP_BUCKET}/" --region "$AWS_REGION" >/dev/null 2>&1; then
+            log_error "Backup bucket not found or not accessible: $BACKUP_BUCKET"
+            failed=true
+        fi
+
+        local snapshot_status
+        snapshot_status=$(aws rds describe-db-cluster-snapshots \
+            --region "$AWS_REGION" \
+            --db-cluster-snapshot-identifier "$SNAPSHOT_ID" \
+            --query 'DBClusterSnapshots[0].Status' \
+            --output text 2>/dev/null || echo "missing")
+
+        if [ "$snapshot_status" = "missing" ] || [ "$snapshot_status" = "None" ] || [ -z "$snapshot_status" ]; then
+            log_error "RDS snapshot not found: $SNAPSHOT_ID"
+            log_error "It may have been deleted by destroy.sh without PRESERVE_BACKUP_SNAPSHOTS=true"
+            log_error "Re-run steps 1-4 to create a new backup, then continue with steps 6-10"
+            failed=true
+        elif [ "$snapshot_status" != "available" ]; then
+            log_error "RDS snapshot is not available (status: $snapshot_status): $SNAPSHOT_ID"
+            failed=true
+        fi
+    fi
+
+    if [ "$failed" = true ]; then
+        log_error "Restore prerequisites validation failed — cannot proceed with restore"
+        PRESERVE_INFRA_ON_FAILURE=true
+        return 1
+    fi
+
+    log_success "Restore prerequisites validated (bucket and snapshot available)"
+    return 0
+}
+
 # Step 8: Restore from backup
 restore_from_backup() {
     local step_start
@@ -1999,6 +2323,10 @@ restore_from_backup() {
     log_step "Step 8: Restoring from backup..."
 
     cd "$PROJECT_ROOT"
+
+    if ! validate_restore_artifacts; then
+        return 1
+    fi
 
     # Wait for cluster to be accessible before attempting restore
     log_info "Waiting for Kubernetes cluster to be accessible..."
@@ -2050,7 +2378,11 @@ restore_from_backup() {
     log_info "========================================="
     log_info "RESTORE SCRIPT OUTPUT (real-time)"
     log_info "========================================="
-    
+
+    # Step 7 recreates infra (new aurora_cluster_id); stale checkpoints must not skip RDS.
+    log_info "Clearing stale restore checkpoint before restore..."
+    rm -f "${PROJECT_ROOT}/.restore-state"
+
     ./scripts/restore.sh "$BACKUP_BUCKET" "$SNAPSHOT_ID" --region "$AWS_REGION"
     local restore_exit_code=$?
     
@@ -2624,11 +2956,11 @@ print_test_results() {
     fi
 
     if [ $failed_count -eq 0 ]; then
-        echo -e "${GREEN}🎉 All tests passed successfully!${NC}"
+        echo -e "${GREEN}🎉 All test steps passed successfully!${NC}"
         echo -e "${GREEN}✅ Success: $success_count${NC}"
         echo -e "${GREEN}✅ Failed: $failed_count${NC}"
     else
-        echo -e "${RED}❌ Some tests failed${NC}"
+        echo -e "${RED}❌ Some test steps failed${NC}"
         echo -e "${GREEN}✅ Success: $success_count${NC}"
         echo -e "${RED}❌ Failed: $failed_count${NC}"
     fi
@@ -2739,6 +3071,20 @@ main() {
 
     # Set up directories
     get_directories
+
+    if [ -z "$STATE_FILE" ]; then
+        STATE_FILE="$(get_default_state_file)"
+    fi
+
+    if [ "$LIST_STEPS" = "true" ]; then
+        list_e2e_steps
+        exit 0
+    fi
+
+    if [ "$LIST_GROUPS" = "true" ]; then
+        list_step_groups
+        exit 0
+    fi
     
     # Detect AWS region from Terraform state if not explicitly set via --aws-region
     get_aws_region
@@ -2752,31 +3098,41 @@ main() {
     echo -e "  Cluster Name: $CLUSTER_NAME"
     echo -e "  Namespace: $NAMESPACE"
     echo -e "  Test ID: $TEST_TIMESTAMP"
+    echo -e "  Steps: $FROM_STEP-$TO_STEP of $TOTAL_STEPS"
+    echo -e "  State file: $STATE_FILE"
     echo ""
 
-    # Note: No kubeconfig check needed here - cluster doesn't exist yet
+    # Load persisted state when resuming after step 1
+    if [ "$FROM_STEP" -gt 1 ]; then
+        load_e2e_state || exit 1
+    fi
 
-    # Reset Kubernetes manifests to default state before starting
-    log_info "Resetting Kubernetes manifests to default state with placeholders..."
-    cd "$PROJECT_ROOT"
-    log_info "Current directory: $(pwd)"
-    log_info "Looking for restore-defaults.sh at: $(pwd)/scripts/restore-defaults.sh"
-    ls -la scripts/restore-defaults.sh || log_error "File not found"
-    ./scripts/restore-defaults.sh --force || {
-        log_error "Failed to reset Kubernetes manifests to default state."
-        exit 1
-    }
-    log_success "Kubernetes manifests reset to default state."
-    echo ""
-    echo -e "${YELLOW}⚠️  WARNING: This test will create and destroy AWS resources!${NC}"
-    echo -e "${YELLOW}   AWS resources will be created and destroyed during testing.${NC}"
-    echo ""
+    # Reset Kubernetes manifests only when starting a fresh run (step 1)
+    if [ "$FROM_STEP" -eq 1 ] && [ "$SKIP_RESTORE_DEFAULTS" != "true" ]; then
+        log_info "Resetting Kubernetes manifests to default state with placeholders..."
+        cd "$PROJECT_ROOT"
+        ./scripts/restore-defaults.sh --force || {
+            log_error "Failed to reset Kubernetes manifests to default state."
+            exit 1
+        }
+        log_success "Kubernetes manifests reset to default state."
+    elif [ "$SKIP_RESTORE_DEFAULTS" = "true" ]; then
+        log_info "Skipping k8s manifest reset (--skip-restore-defaults)"
+    else
+        log_info "Skipping k8s manifest reset (resuming from step $FROM_STEP)"
+    fi
+
+    if [ "$FROM_STEP" -eq 1 ] || [ "$TO_STEP" -eq 10 ]; then
+        echo ""
+        echo -e "${YELLOW}⚠️  WARNING: This test will create and destroy AWS resources!${NC}"
+        echo -e "${YELLOW}   AWS resources will be created and destroyed during testing.${NC}"
+        echo ""
+    fi
 
     # Check prerequisites
     check_prerequisites
     
     # Check for orphaned resources from previous test runs
-    # This prevents cascading failures and provides clear error messages
     check_for_orphaned_resources
 
     # Validate configuration
@@ -2785,67 +3141,17 @@ main() {
     # Validate pre-flight state
     validate_preflight_state
 
-    # Execute test steps with error handling
-    if ! deploy_infrastructure; then
-        log_error "Infrastructure deployment failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! deploy_openemr; then
-        log_error "OpenEMR deployment failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! deploy_test_data; then
-        log_error "Test data deployment failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! backup_installation; then
-        log_error "Backup creation failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! test_monitoring_stack; then
-        log_error "Monitoring stack test failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! delete_infrastructure; then
-        log_error "Infrastructure deletion failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! recreate_infrastructure; then
-        log_error "Infrastructure recreation failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! restore_from_backup; then
-        log_error "Backup restoration failed"
-        print_test_results
-        exit 1
-    fi
-
-    if ! verify_restoration; then
-        log_error "Restoration verification failed"
-        add_test_result "Restoration Verification" "FAILED" "Restoration verification step failed" "0"
-        print_test_results
-        exit 1
-    fi
-
-    if ! cleanup_final; then
-        log_error "Final cleanup failed"
-        print_test_results
-        exit 1
-    fi
+    # Execute test steps (chunked via --from-step / --to-step / --group)
+    run_e2e_step 1 deploy_infrastructure
+    run_e2e_step 2 deploy_openemr
+    run_e2e_step 3 deploy_test_data
+    run_e2e_step 4 backup_installation
+    run_e2e_step 5 test_monitoring_stack
+    run_e2e_step 6 delete_infrastructure
+    run_e2e_step 7 recreate_infrastructure
+    run_e2e_step 8 restore_from_backup
+    run_e2e_step 9 verify_restoration
+    run_e2e_step 10 cleanup_final
 
     # Test completed successfully - disable emergency cleanup trap
     trap - ERR EXIT
@@ -2854,6 +3160,11 @@ main() {
     print_test_results
 
     log_success "🎉 END-TO-END TEST COMPLETED SUCCESSFULLY! 🎉"
+    if [ "$TO_STEP" -lt "$TOTAL_STEPS" ]; then
+        local next_step=$((TO_STEP + 1))
+        log_info "Chunk complete (steps $FROM_STEP-$TO_STEP). Continue with:"
+        log_info "  $0 --from-step $next_step --state-file $STATE_FILE"
+    fi
 }
 
 # Run main function
