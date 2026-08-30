@@ -378,6 +378,13 @@ _all_tf_output_names() {
   ! grep -Eq 'version-manager\.sh.*\|\| echo' "$workflow"
 }
 
+@test "CONTRACT: monthly version check authenticates GitHub API lookups" {
+  local workflow="${PROJECT_ROOT}/.github/workflows/monthly-version-check.yml"
+  local version_manager="${SCRIPTS_DIR}/version-manager.sh"
+  grep -Fq 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}' "$workflow"
+  grep -Fq 'github_api_curl()' "$version_manager"
+}
+
 # ===========================================================================
 # TERRAFORM-TO-SCRIPT CONTRACT
 # ===========================================================================

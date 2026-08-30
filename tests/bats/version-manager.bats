@@ -49,6 +49,11 @@ SCRIPT="${SCRIPTS_DIR}/version-manager.sh"
   [[ "$output" =~ "--components" ]]
 }
 
+@test "help mentions GITHUB_TOKEN" {
+  run_script "version-manager.sh" "help"
+  [[ "$output" =~ "GITHUB_TOKEN" ]]
+}
+
 # ── Error handling ──────────────────────────────────────────────────────────
 
 @test "invalid command exits non-zero" {
@@ -409,7 +414,7 @@ SCRIPT="${SCRIPTS_DIR}/version-manager.sh"
 
 @test "UNIT: OpenEMR lookup trusts official releases instead of newer Docker tags" {
   if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
-  FUNC_FILE=$(extract_function "$SCRIPT" "get_latest_openemr_release_version")
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "get_latest_openemr_release_version")
   run bash -c '
     log() { :; }
     curl() {
@@ -500,7 +505,7 @@ YAML
 
 @test "UNIT: GitHub Action lookup ignores aliases and prereleases" {
   if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
-  FUNC_FILE=$(extract_function "$SCRIPT" "get_latest_github_action_version")
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "get_latest_github_action_version")
   run bash -c '
     log() { :; }
     curl() {
@@ -512,6 +517,76 @@ YAML
   rm -f "$FUNC_FILE"
   assert_success
   [ "$output" = "v7.0.1" ]
+}
+
+@test "UNIT: github_api_curl sends a bearer token when GITHUB_TOKEN is set" {
+  FUNC_FILE=$(extract_function "$SCRIPT" "github_api_curl")
+  run bash -c '
+    curl() { printf "%s\n" "$*"; }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    github_api_curl -s "https://api.github.com/repos/psf/black/releases/latest"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [[ "$output" == *"Authorization: Bearer ghs_test_token"* ]]
+  [[ "$output" == *"https://api.github.com/repos/psf/black/releases/latest"* ]]
+}
+
+@test "UNIT: github_api_curl omits Authorization when no token is set" {
+  FUNC_FILE=$(extract_function "$SCRIPT" "github_api_curl")
+  run bash -c '
+    unset GITHUB_TOKEN GH_TOKEN
+    curl() { printf "%s\n" "$*"; }
+    source "$1"
+    github_api_curl -s "https://api.github.com/repos/psf/black/releases/latest"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [[ "$output" != *"Authorization:"* ]]
+  [[ "$output" == *"https://api.github.com/repos/psf/black/releases/latest"* ]]
+}
+
+@test "UNIT: pre-commit lookup falls back to tags when releases are missing" {
+  if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "github_api_message" "get_latest_pre_commit_hook_version")
+  run bash -c '
+    log() { :; }
+    curl() {
+      local url="${*: -1}"
+      if [[ "$url" == *"/releases/latest"* ]]; then
+        printf "%s\n" '"'"'{"message":"Not Found"}'"'"'
+      else
+        printf "%s\n" '"'"'[{"name":"7.3.0"}]'"'"'
+      fi
+    }
+    source "$1"
+    get_latest_pre_commit_hook_version "flake8"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [ "$output" = "7.3.0" ]
+}
+
+@test "UNIT: pre-commit lookup fails closed on GitHub rate limits" {
+  if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "github_api_message" "get_latest_pre_commit_hook_version")
+  run bash -c '
+    log() { :; }
+    curl() {
+      local url="${*: -1}"
+      if [[ "$url" == *"/releases/latest"* ]]; then
+        printf "%s\n" '"'"'{"message":"API rate limit exceeded for 1.2.3.4."}'"'"'
+      else
+        printf "%s\n" '"'"'[{"name":"7.3.0"}]'"'"'
+      fi
+    }
+    source "$1"
+    get_latest_pre_commit_hook_version "flake8"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_failure
+  [[ "$output" != "7.3.0" ]]
 }
 
 @test "UNIT: failed lookup marks the overall version check incomplete" {

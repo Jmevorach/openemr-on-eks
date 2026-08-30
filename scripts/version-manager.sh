@@ -33,7 +33,9 @@
 #   help                       Show this help message
 #
 # Environment Variables:
-#   None - Script uses fixed paths relative to project root
+#   GITHUB_TOKEN / GH_TOKEN  Optional GitHub API token. Authenticated lookups
+#                            are required for a full scan in CI; unauthenticated
+#                            calls share GitHub's 60 request/hour IP limit.
 #
 # Component Types Supported:
 #   - Docker containers (OpenEMR, monitoring stack, etc.)
@@ -86,6 +88,35 @@ log() {
     
     # Output to both console (stderr) and log file with timestamp and level
     echo -e "${timestamp} [${level}] ${message}" | tee -a "$LOG_FILE" >&2
+}
+
+# Authenticated GitHub REST helper. Unauthenticated runner IPs share a
+# 60 request/hour quota, which a full version scan exceeds.
+github_api_curl() {
+    local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    if [ -n "$token" ]; then
+        curl \
+            -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$@"
+    else
+        curl \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$@"
+    fi
+}
+
+# Return the GitHub API error message, if this body is an error object.
+github_api_message() {
+    local response="${1:-}"
+    if [ -z "$response" ] || ! echo "$response" | jq empty 2>/dev/null; then
+        return 0
+    fi
+    echo "$response" | jq -r \
+        'if type == "object" and (.message | type == "string") then .message else empty end' \
+        2>/dev/null || true
 }
 
 # Function to search for version strings in the codebase
@@ -500,7 +531,7 @@ get_latest_docker_version() {
 get_latest_openemr_release_version() {
     local url="https://api.github.com/repos/openemr/openemr/releases/latest"
     local response
-    if ! response=$(curl -s "$url"); then
+    if ! response=$(github_api_curl -s "$url"); then
         log "ERROR" "Failed to fetch the latest OpenEMR release"
         return 1
     fi
@@ -810,7 +841,7 @@ get_latest_github_action_version() {
 
     log "INFO" "Checking latest version for GitHub Action: $action_name..."
 
-    if ! response=$(curl --fail --silent --show-error --location "$tags_url" 2>/dev/null) ||
+    if ! response=$(github_api_curl --fail --silent --show-error --location "$tags_url" 2>/dev/null) ||
         ! echo "$response" | jq empty 2>/dev/null; then
         log "ERROR" "Failed to fetch or parse GitHub tags for $action_name"
         return 1
@@ -839,7 +870,7 @@ get_latest_github_runner_version() {
     
     log "INFO" "Fetching runner releases from GitHub API..."
     # Fetch runner releases from GitHub API
-    local response=$(curl -s "$releases_url" 2>/dev/null || echo "")
+    local response=$(github_api_curl -s "$releases_url" 2>/dev/null || echo "")
     
     # Check if the API call was successful
     if [ -z "$response" ]; then
@@ -944,24 +975,37 @@ get_latest_pre_commit_hook_version() {
             ;;
     esac
 
-    # Try releases first, then tags if releases don't exist
-    # Some repositories use releases, others use tags for versioning
+    # Releases first, then tags. Some hook repos (for example pycqa/flake8)
+    # publish tags only. Rate-limit and other API errors must not be treated
+    # as a missing-release signal.
     local url="https://api.github.com/repos/${repo}/releases/latest"
-    local response=$(curl -s "$url" 2>/dev/null || echo "")
+    local response
+    response=$(github_api_curl -s "$url" 2>/dev/null || echo "")
     local latest_version=""
+    local api_message
+    api_message=$(github_api_message "$response")
 
-    # Check if releases exist, otherwise fall back to tags
-    if [ -z "$response" ] || echo "$response" | jq -e '.message' >/dev/null 2>&1; then
-        # No releases, try tags
+    if [ -z "$response" ]; then
+        log "WARN" "Empty GitHub API response for pre-commit hook: $hook_name"
+        echo "❌ Unable to determine"
+        return 1
+    elif [ "$api_message" = "Not Found" ]; then
         log "INFO" "No releases found for $hook_name, trying tags..."
         local tags_url="https://api.github.com/repos/${repo}/tags"
-        local tags_response=$(curl -s "$tags_url" 2>/dev/null || echo "")
-        
-        if [ -n "$tags_response" ] && [ "$tags_response" != "[]" ]; then
+        local tags_response
+        tags_response=$(github_api_curl -s "$tags_url" 2>/dev/null || echo "")
+        local tags_message
+        tags_message=$(github_api_message "$tags_response")
+        if [ -n "$tags_message" ]; then
+            log "WARN" "GitHub API error for $hook_name tags: $tags_message"
+        elif echo "$tags_response" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
             latest_version=$(echo "$tags_response" | jq -r '.[0].name' 2>/dev/null || echo "")
         fi
+    elif [ -n "$api_message" ]; then
+        log "WARN" "GitHub API error for $hook_name: $api_message"
+        echo "❌ Unable to determine"
+        return 1
     else
-        # Use releases
         latest_version=$(echo "$response" | jq -r '.tag_name' 2>/dev/null || echo "")
     fi
 
@@ -993,14 +1037,14 @@ get_latest_go_package_version() {
     local url="https://api.github.com/repos/${repo_path}/releases/latest"
 
     # Fetch the latest release information from GitHub API
-    local response=$(curl -s "$url" 2>/dev/null || echo "")
+    local response=$(github_api_curl -s "$url" 2>/dev/null || echo "")
 
     # Check if the API call was successful and response is valid JSON
     if [ -z "$response" ] || ! echo "$response" | jq empty 2>/dev/null; then
         log "WARN" "Failed to fetch or parse GitHub API response for $repo_path, trying tags..."
         # Try tags as fallback
         local tags_url="https://api.github.com/repos/${repo_path}/tags"
-        local tags_response=$(curl -s "$tags_url" 2>/dev/null || echo "")
+        local tags_response=$(github_api_curl -s "$tags_url" 2>/dev/null || echo "")
         
         if [ -n "$tags_response" ] && [ "$tags_response" != "[]" ]; then
             # Get the first tag (latest)
@@ -1020,7 +1064,7 @@ get_latest_go_package_version() {
         log "WARN" "GitHub API error for $repo_path: $(echo "$response" | jq -r '.message'), trying tags..."
         # Try tags as fallback
         local tags_url="https://api.github.com/repos/${repo_path}/tags"
-        local tags_response=$(curl -s "$tags_url" 2>/dev/null || echo "")
+        local tags_response=$(github_api_curl -s "$tags_url" 2>/dev/null || echo "")
         
         if [ -n "$tags_response" ] && [ "$tags_response" != "[]" ]; then
             local latest_tag=$(echo "$tags_response" | jq -r '.[0].name' 2>/dev/null || echo "")
@@ -1087,8 +1131,11 @@ get_latest_semver_version() {
             # and sort so patch bumps like 3.14.7 are not missed when newer RC tags
             # appear first in the API response.
             local response
-            response="$(curl -sS "https://api.github.com/repos/python/cpython/tags?per_page=100" 2>/dev/null || echo "")"
-            if [ -z "$response" ] || [ "$response" = "[]" ]; then
+            response="$(github_api_curl -sS "https://api.github.com/repos/python/cpython/tags?per_page=100" 2>/dev/null || echo "")"
+            local python_api_message
+            python_api_message=$(github_api_message "$response")
+            if [ -z "$response" ] || [ "$response" = "[]" ] || [ -n "$python_api_message" ]; then
+                [ -n "$python_api_message" ] && log "WARN" "GitHub API error for python_version: $python_api_message"
                 echo "❌ Error"
                 return 1
             fi
@@ -1100,8 +1147,11 @@ get_latest_semver_version() {
             # For Terraform, check HashiCorp releases
             # Terraform uses GitHub releases for versioning
             local url="https://api.github.com/repos/hashicorp/terraform/releases/latest"
-            local response=$(curl -s "$url" 2>/dev/null || echo "")
-            if [ -z "$response" ]; then
+            local response=$(github_api_curl -s "$url" 2>/dev/null || echo "")
+            local terraform_api_message
+            terraform_api_message=$(github_api_message "$response")
+            if [ -z "$response" ] || [ -n "$terraform_api_message" ]; then
+                [ -n "$terraform_api_message" ] && log "WARN" "GitHub API error for terraform_version: $terraform_api_message"
                 echo "❌ Error"
                 return 1
             fi
@@ -1111,8 +1161,11 @@ get_latest_semver_version() {
             # For kubectl, check Kubernetes releases
             # kubectl is part of the Kubernetes project and uses GitHub releases
             local url="https://api.github.com/repos/kubernetes/kubernetes/releases/latest"
-            local response=$(curl -s "$url" 2>/dev/null || echo "")
-            if [ -z "$response" ]; then
+            local response=$(github_api_curl -s "$url" 2>/dev/null || echo "")
+            local kubectl_api_message
+            kubectl_api_message=$(github_api_message "$response")
+            if [ -z "$response" ] || [ -n "$kubectl_api_message" ]; then
+                [ -n "$kubectl_api_message" ] && log "WARN" "GitHub API error for kubectl_version: $kubectl_api_message"
                 echo "❌ Error"
                 return 1
             fi
@@ -1176,6 +1229,11 @@ check_updates() {
     local month="${3:-}"
     
     log "INFO" "Starting version awareness check for components: $components..."
+    if [ -z "${GITHUB_TOKEN:-}" ] && [ -z "${GH_TOKEN:-}" ]; then
+        log "WARN" "GITHUB_TOKEN/GH_TOKEN is unset; unauthenticated GitHub API calls may hit the 60 request/hour limit"
+    else
+        log "INFO" "Using authenticated GitHub API requests"
+    fi
     if [ "$create_issue" = "true" ]; then
         log "INFO" "GitHub issue creation enabled"
     fi
@@ -2006,6 +2064,10 @@ Examples:
   $0 check --components security_tools           # Check only security tools
   $0 check --create-issue --month "January 2025" # Create GitHub issue
   $0 status                                      # Show current status
+
+Environment:
+  GITHUB_TOKEN / GH_TOKEN   Optional GitHub API token. Authenticated lookups
+                            avoid the unauthenticated 60 request/hour limit.
 
 Note: Some version checks require AWS CLI credentials to be configured.
       The system will gracefully handle missing credentials and report what
