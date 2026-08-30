@@ -547,6 +547,104 @@ YAML
   [[ "$output" == *"https://api.github.com/repos/psf/black/releases/latest"* ]]
 }
 
+@test "UNIT: github_api_curl retries unauthenticated after an IP allow list error" {
+  FUNC_FILE=$(extract_function "$SCRIPT" "github_api_curl")
+  run bash -c '
+    curl() {
+      if [[ "$*" == *"Authorization: Bearer"* ]]; then
+        printf "%s\n" '"'"'{"message":"Although you appear to have the correct authorization credentials, the organization has an IP allow list enabled, and your IP address is not permitted to access this resource."}'"'"'
+        return 0
+      fi
+      printf "%s\n" '"'"'[{"name":"v0.36.0"}]'"'"'
+    }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    github_api_curl -s "https://api.github.com/repos/aquasecurity/trivy-action/tags?per_page=100"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [ "$output" = '[{"name":"v0.36.0"}]' ]
+}
+
+@test "UNIT: github_api_curl retries unauthenticated after authenticated --fail" {
+  FUNC_FILE=$(extract_function "$SCRIPT" "github_api_curl")
+  run bash -c '
+    curl() {
+      if [[ "$*" == *"Authorization: Bearer"* ]]; then
+        return 22
+      fi
+      printf "%s\n" '"'"'[{"name":"v0.36.0"}]'"'"'
+    }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    github_api_curl --fail -s "https://api.github.com/repos/aquasecurity/trivy-action/tags?per_page=100"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [ "$output" = '[{"name":"v0.36.0"}]' ]
+}
+
+@test "UNIT: GitHub Action lookup recovers from Aqua IP allow list" {
+  if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "get_latest_github_action_version")
+  run bash -c '
+    log() { :; }
+    curl() {
+      if [[ "$*" == *"Authorization: Bearer"* ]]; then
+        return 22
+      fi
+      printf "%s\n" '"'"'[{"name":"v0.36.0"},{"name":"v0.35.0"}]'"'"'
+    }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    get_latest_github_action_version "aquasecurity/trivy-action"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [ "$output" = "v0.36.0" ]
+}
+
+@test "UNIT: Go package lookup recovers from Aqua IP allow list" {
+  if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
+  FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "get_latest_go_package_version")
+  run bash -c '
+    log() { :; }
+    curl() {
+      if [[ "$*" == *"Authorization: Bearer"* ]]; then
+        printf "%s\n" '"'"'{"message":"the organization has an IP allow list enabled"}'"'"'
+        return 0
+      fi
+      printf "%s\n" '"'"'{"tag_name":"v0.74.0"}'"'"'
+    }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    get_latest_go_package_version "aquasecurity/trivy"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [ "$output" = "v0.74.0" ]
+}
+
+@test "UNIT: github_api_curl does not retry rate-limit errors unauthenticated" {
+  FUNC_FILE=$(extract_function "$SCRIPT" "github_api_curl")
+  run bash -c '
+    curl() {
+      if [[ "$*" == *"Authorization: Bearer"* ]]; then
+        printf "%s\n" '"'"'{"message":"API rate limit exceeded for 1.2.3.4."}'"'"'
+        return 0
+      fi
+      printf "%s\n" "should-not-be-used"
+    }
+    source "$1"
+    GITHUB_TOKEN="ghs_test_token"
+    github_api_curl -s "https://api.github.com/repos/psf/black/releases/latest"
+  ' _ "$FUNC_FILE"
+  rm -f "$FUNC_FILE"
+  assert_success
+  [[ "$output" == *"API rate limit exceeded"* ]]
+  [[ "$output" != *"should-not-be-used"* ]]
+}
+
 @test "UNIT: pre-commit lookup falls back to tags when releases are missing" {
   if ! command -v jq >/dev/null 2>&1; then skip "jq not installed"; fi
   FUNC_FILE=$(extract_functions "$SCRIPT" "github_api_curl" "github_api_message" "get_latest_pre_commit_hook_version")

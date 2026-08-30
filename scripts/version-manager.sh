@@ -92,20 +92,42 @@ log() {
 
 # Authenticated GitHub REST helper. Unauthenticated runner IPs share a
 # 60 request/hour quota, which a full version scan exceeds.
+# Some public orgs (for example Aqua Security) apply an IP allow list to
+# authenticated requests, which blocks GitHub-hosted runner IPs. Public
+# unauthenticated reads still succeed, so retry without credentials in
+# that case. --fail callers get an empty body on 403, so a failed
+# authenticated call with no body is retried the same way.
 github_api_curl() {
     local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-    if [ -n "$token" ]; then
-        curl \
-            -H "Authorization: Bearer ${token}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$@"
-    else
-        curl \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$@"
+    local -a headers=(
+        -H "Accept: application/vnd.github+json"
+        -H "X-GitHub-Api-Version: 2022-11-28"
+    )
+
+    if [ -z "$token" ]; then
+        curl "${headers[@]}" "$@"
+        return $?
     fi
+
+    local body=""
+    local status=0
+    body=$(curl "${headers[@]}" -H "Authorization: Bearer ${token}" "$@") || status=$?
+
+    if [ "$status" -eq 0 ] && [[ "$body" != *"IP allow list"* ]]; then
+        printf '%s\n' "$body"
+        return 0
+    fi
+
+    if [[ "$body" == *"IP allow list"* ]] || { [ "$status" -ne 0 ] && [ -z "$body" ]; }; then
+        if declare -F log >/dev/null; then
+            log "WARN" "Authenticated GitHub API request rejected; retrying without credentials"
+        fi
+        curl "${headers[@]}" "$@"
+        return $?
+    fi
+
+    printf '%s\n' "$body"
+    return "$status"
 }
 
 # Return the GitHub API error message, if this body is an error object.
