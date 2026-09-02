@@ -6,7 +6,9 @@ This guide provides measured timing data for various operations in the OpenEMR o
 
 > **Note:** Timings can vary based on AWS region, time of day, AWS service
 > load, and network conditions. The OpenEMR 8.2.0 figures are one complete
-> baseline run; historical ranges are labeled separately.
+> baseline run; historical ranges are labeled separately. A September 2026
+> OpenEMR 8.3.0 run measured comparable phase times — see
+> [Data Sources](#-data-sources).
 
 <!-- BEGIN AUTOMATED E2E TIMINGS -->
 ## Latest Automated E2E Timing Report
@@ -596,6 +598,19 @@ historical complete runs from October and December 2025.
 - **Duration:** 10,149 seconds (169m 9s)
 - **Result:** All 10 phases passed, including final resource cleanup
 
+**OpenEMR 8.3.0 verification run (September 2026):**
+- **September 1, 2026:** OpenEMR 8.3.0, run `20260901-220321`
+- **Duration:** 10,548 seconds (175m 48s) for phases 1-9
+- **Result:** Phases 1-9 passed. The shell session was killed during phase 10,
+  so cleanup was finished manually with `terraform destroy` and its duration
+  was not captured. The automated report above therefore still reflects the
+  last complete 8.2.0 run.
+- **Phases:** infrastructure 21m 33s, OpenEMR 21m 52s, test data 6m 43s,
+  backup 40s, monitoring 27m 33s, deletion 23m 44s, recreation 36m 48s,
+  restore 36m 6s, verification 49s
+- **Note:** 8.3.0 phase times land within normal run-to-run variance of the
+  8.2.0 baseline, so existing time budgets still apply.
+
 **Historical December 2025 runs:**
 - **Test Run 1:** December 10, 2025 - 13,025 seconds (3.62 hours)
 - **Test Run 2:** December 10, 2025 - 12,673 seconds (3.52 hours)
@@ -604,7 +619,8 @@ historical complete runs from October and December 2025.
 **Test Environment:**
 - AWS Region: us-west-2
 - EKS Version: 1.36
-- Current OpenEMR Version: 8.2.0
+- Current OpenEMR Version: 8.3.0
+- Baseline OpenEMR Version: 8.2.0
 - Historical OpenEMR Version: 8.0.0
 - Aurora: Serverless v2 (0.5-16 ACU)
 - ElastiCache: Serverless (Valkey 8.0)

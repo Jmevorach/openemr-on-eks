@@ -1,6 +1,8 @@
 #!/bin/bash
 # Launch the full 10-step E2E backup/restore test with AWS credentials and logging.
-# Run from your terminal so the ~2.8 hr OpenEMR 8.2.0 baseline stays alive.
+# Run from your terminal so the ~3 hr OpenEMR 8.3.0 baseline stays alive.
+# A session that dies mid-run leaves AWS resources behind; if that happens,
+# finish the teardown with `cd terraform && terraform destroy`.
 #
 # Usage:
 #   ./scripts/run-e2e-full-test.sh
