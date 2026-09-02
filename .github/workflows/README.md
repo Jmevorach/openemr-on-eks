@@ -304,8 +304,8 @@ included in the Test Summary aggregation.
 #### **Environment Configuration**
 
 - **Python**: 3.14.7
-- **Terraform**: 1.15.8
-- **Kubectl**: v1.36.3
+- **Terraform**: 1.16.0
+- **Kubectl**: v1.37.0
 - **Operating System**: `ubuntu-26.04`
 
 #### **Permissions**
@@ -437,8 +437,8 @@ enabled, it creates a report issue with the configured labels. The
 
 #### **Environment Configuration**
 
-- **Terraform**: 1.15.8
-- **Kubectl**: v1.36.3
+- **Terraform**: 1.16.0
+- **Kubectl**: v1.37.0
 - **Operating System**: `ubuntu-26.04`
 - **Tools**: `yq`, `jq`, `curl` for API interactions
 

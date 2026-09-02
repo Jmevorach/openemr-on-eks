@@ -51,7 +51,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.16.0
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive terraform/
@@ -79,7 +79,7 @@ jobs:
           export SSL_CERT_ARN='arn:aws:acm:us-west-2:111122223333:certificate/00000000-0000-0000-0000-000000000000'
           export S3_BUCKET_NAME='openemr-ci-alb-logs'
           export WAF_ACL_ARN='arn:aws:wafv2:us-west-2:111122223333:regional/webacl/openemr/00000000-0000-0000-0000-000000000000'
-          export OPENEMR_VERSION='8.2.0'
+          export OPENEMR_VERSION='8.3.0'
           export AWS_REGION='us-west-2'
           export CLUSTER_NAME='openemr-ci'
           export OPENEMR_ROLE_ARN='arn:aws:iam::111122223333:role/openemr-ci'
@@ -144,7 +144,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.25.12'
+          go-version: '1.27.1'
           cache-dependency-path: console/go.sum
 
       - name: Install dependencies

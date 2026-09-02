@@ -52,7 +52,7 @@ This comprehensive guide provides step-by-step instructions for deploying a prod
 ```bash
 # Required tools and minimum versions
 aws-cli >= 2.15.0
-terraform >= 1.15.8
+terraform >= 1.16.0
 kubectl >= 1.29.0
 helm >= 3.12.0
 jq >= 1.6
@@ -404,7 +404,7 @@ cluster_name = "openemr-eks"
 kubernetes_version = "1.36"
 
 # OpenEMR Application Configuration
-openemr_version = "8.2.0"  # Latest stable OpenEMR version
+openemr_version = "8.3.0"  # Latest stable OpenEMR version
 
 # Network Configuration
 vpc_cidr        = "10.0.0.0/16"
@@ -972,12 +972,12 @@ Next steps:
    • Basic deployment: CloudWatch logs + Database Insights
    • Optional: Enhanced monitoring stack: cd /path/to/openemr-on-eks/monitoring && ./install-monitoring.sh
    • Enhanced stack includes:
-     - Prometheus v88.0.1 (metrics & alerting)
+     - Prometheus v88.6.2 (metrics & alerting)
      - Grafana (dashboards with auto-discovery)
      - Loki v7.0.0 (log aggregation with S3 storage)
      - Tempo v2.26.0 (distributed tracing with S3 storage, microservice mode)
-     - Mimir v6.1.0 (long-term metrics storage)
-     - OTeBPF v0.4.1 (eBPF auto-instrumentation)
+     - Mimir v6.2.0 (long-term metrics storage)
+     - OTeBPF v0.12.2 (eBPF auto-instrumentation)
      - AlertManager (Slack integration support)
      - OpenEMR-specific monitoring (ServiceMonitor, PrometheusRule)
    • **Loki S3 Storage**: Loki uses AWS S3 for production-grade log storage. As [recommended by Grafana](https://grafana.com/docs/loki/latest/setup/install/helm/configure-storage/), we configure object storage via cloud provider for production deployments. This provides better durability, scalability, and cost-effectiveness compared to filesystem storage.

@@ -38,8 +38,8 @@ permissions:
 
 # Environment variables
 env:
-  GO_VERSION: '1.25.12'    # Go version required by console and gosec
-  TRIVY_VERSION: '0.72.0'  # Trivy engine version (synced with versions.yaml)
+  GO_VERSION: '1.27.1'    # Go version required by console and gosec
+  TRIVY_VERSION: '0.74.0'  # Trivy engine version (synced with versions.yaml)
   BINARY_NAME: 'openemr-eks-console'
   MODULE_PATH: 'console'
 
@@ -77,7 +77,7 @@ jobs:
         run: go vet ./...
 
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@2026.1
+        run: go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
 
       - name: Run staticcheck
         working-directory: ${{ env.MODULE_PATH }}
@@ -258,7 +258,7 @@ jobs:
           echo "============================================================="
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true  # Don't fail if GitHub Advanced Security is not enabled
         with:

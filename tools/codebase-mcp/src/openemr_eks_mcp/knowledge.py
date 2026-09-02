@@ -592,7 +592,7 @@ class KnowledgeService:
         except yaml.YAMLError as exc:
             raise ValueError("versions.yaml is not valid YAML.") from exc
         finally:
-            loader.dispose()  # type: ignore[no-untyped-call]
+            loader.dispose()
         if not isinstance(loaded, Mapping):
             raise ValueError("versions.yaml must contain a mapping.")
 

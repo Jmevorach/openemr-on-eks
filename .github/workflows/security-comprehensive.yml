@@ -53,12 +53,12 @@ permissions:
 
 env:
   # Tool versions for reproducibility (synced with versions.yaml)
-  TRIVY_VERSION: '0.72.0'
-  CHECKOV_VERSION: '3.3.8'
+  TRIVY_VERSION: '0.74.0'
+  CHECKOV_VERSION: '3.3.16'
   KICS_VERSION: 'v2.1.20'
-  GOSEC_VERSION: 'v2.28.0'
+  GOSEC_VERSION: 'v2.29.0'
   PYTHON_VERSION: '3.14'
-  GO_VERSION: '1.25.12'
+  GO_VERSION: '1.27.1'
 
 jobs:
   # =====================================================================
@@ -123,7 +123,7 @@ jobs:
           [ -f "trivy-config-results.txt" ] && cat trivy-config-results.txt || echo "No results"
 
       - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -185,7 +185,7 @@ jobs:
           done
 
       - name: Upload Checkov SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -234,7 +234,7 @@ jobs:
           fi
 
       - name: Upload KICS SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -304,7 +304,7 @@ jobs:
           fi
 
       - name: Upload Bandit SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -362,7 +362,7 @@ jobs:
           fi
 
       - name: Upload gosec SARIF
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:

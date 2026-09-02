@@ -351,7 +351,7 @@ _all_tf_output_names() {
   [ -s "${PROJECT_ROOT}/oidc_provider/.terraform.lock.hcl" ]
   grep -Fq 'provider "registry.terraform.io/hashicorp/aws"' \
     "${PROJECT_ROOT}/oidc_provider/.terraform.lock.hcl"
-  grep -Fq 'terraform_version: 1.15.8' "$CONTRACT_WORKFLOW"
+  grep -Fq 'terraform_version: 1.16.0' "$CONTRACT_WORKFLOW"
   grep -Fq 'terraform init -backend=false -lockfile=readonly' "$CONTRACT_WORKFLOW"
   ! grep -R -F 'terraform init -upgrade' \
     "${PROJECT_ROOT}/scripts" "${PROJECT_ROOT}/oidc_provider/scripts"

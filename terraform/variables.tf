@@ -240,7 +240,7 @@ variable "database_insights_mode" {
 variable "rds_engine_version" {
   description = "Aurora MySQL engine version (check AWS docs for available versions)"
   type        = string
-  default     = "8.0.mysql_aurora.3.12.0" # Stable Aurora MySQL 8.0 version (compatible with MySQL 8.0.44)
+  default     = "8.0.mysql_aurora.3.13.0" # Stable Aurora MySQL 8.0 version (compatible with MySQL 8.0.44)
 }
 
 # =============================================================================
@@ -349,7 +349,7 @@ variable "openemr_scale_up_stabilization_seconds" {
 variable "openemr_version" {
   description = "OpenEMR Docker image version to deploy (use specific versions for production)"
   type        = string
-  default     = "8.2.0" # Stable OpenEMR version
+  default     = "8.3.0" # Stable OpenEMR version
 
   # Validation ensures proper version format
   validation {
