@@ -97,12 +97,12 @@ The `versions.yaml` file serves as the single source of truth for all version in
 # Core Application Versions
 applications:
   openemr:
-    current: "8.2.0"
+    current: "8.3.0"
     registry: "openemr/openemr"
 ```
 
-Selected current project pins include OpenEMR 8.2.0, EKS 1.36, Terraform
-1.15.8, CI Python 3.14.7, kubectl v1.36.3, Floci 1.6.0 (`applications.floci`),
+Selected current project pins include OpenEMR 8.3.0, EKS 1.36, Terraform
+1.16.0, CI Python 3.14.7, kubectl v1.37.0, Floci 2.0.0 (`applications.floci`),
 and the `ubuntu-26.04` GitHub runner.
 Always read `versions.yaml` rather than copying this summary into automation.
 

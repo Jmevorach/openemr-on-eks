@@ -486,7 +486,7 @@ may still select a single suite):
 1. **Python requirements validation** - Enforces synchronized pins
 2. **Test Matrix** - Runs the four repository test suites in parallel
 3. **Lint and Validate** - Additional validation and linting
-4. **Security Scan** - Trivy scanning with engine version 0.72.0
+4. **Security Scan** - Trivy scanning with engine version 0.74.0
 5. **Code Quality** - Common issue detection
 6. **Project CI** - Warp, OpenEMR DR, credential rotation, and knowledge MCP
 7. **Floci CI** - Integration suites and e2e-lite against the Floci emulator

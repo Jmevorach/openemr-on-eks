@@ -48,11 +48,12 @@
 #
 # Notes:
 #   ⚠️  WARNING: This is a destructive test that creates and destroys AWS
-#   resources. Only run in development/testing environments. The OpenEMR 8.2.0
-#   full-run baseline is 169m 9s: infrastructure 23m 52s, OpenEMR 17m 30s,
-#   test data 5m 14s, backup 40s, monitoring 18m 15s, deletion 21m 30s,
-#   recreation 26m 15s, restore 33m 33s, verification 51s, and cleanup 21m 23s.
-#   Deploy chunk (steps 1-3): 46m 36s cold; steps 2-3 measured 22m 44s.
+#   resources. Only run in development/testing environments. The OpenEMR 8.3.0
+#   run measured steps 1-9 at 175m 48s: infrastructure 21m 33s, OpenEMR 21m 52s,
+#   test data 6m 43s, backup 40s, monitoring 27m 33s, deletion 23m 44s,
+#   recreation 36m 48s, restore 36m 6s, and verification 49s. Cleanup was not
+#   captured on that run; the OpenEMR 8.2.0 baseline measured it at 21m 23s.
+#   Deploy chunk (steps 1-3): 50m 8s cold; steps 2-3 measured 28m 35s.
 #
 # Examples:
 #   ./test-end-to-end-backup-restore.sh
@@ -1322,7 +1323,7 @@ deploy_openemr() {
 
     # Wait for deployment to be ready with extended timeout
     # The deploy script may trigger a rolling restart, so we need to wait for it to complete
-    log_info "Waiting for OpenEMR deployment (8.2.0 full deployment step measured 17m 30s)..."
+    log_info "Waiting for OpenEMR deployment (8.3.0 full deployment step measured 21m 52s)..."
     
     # First, wait for deployment to exist
     log_info "Validating OpenEMR deployment exists..."
@@ -1563,7 +1564,9 @@ deploy_test_data() {
 
     # Wait for pod to be ready (both containers) - with progress feedback
     log_info "Waiting for pod to be fully ready (both containers)..."
-    log_info "OpenEMR 8.2.0 full deployment step measured 17m 30s; readiness uses a 20-minute ceiling..."
+    # The ceiling covers this single pod-readiness wait, not the whole step;
+    # 8.3.0 reached readiness in under 5m of the 20m allowance.
+    log_info "OpenEMR 8.3.0 pod readiness measured under 5m; readiness uses a 20-minute ceiling..."
 
     # Use a more robust wait with progress feedback
     local wait_timeout=1200 # 20-minute ceiling
@@ -1597,7 +1600,7 @@ deploy_test_data() {
     log_info "========================================="
     log_info "Waiting for OpenEMR swarm mode initialization to complete..."
     log_info "This prevents test data from being overwritten during swarm init"
-    log_info "Fresh database initialization is included in the 17m 30s OpenEMR 8.2.0 deployment baseline"
+    log_info "Fresh database initialization is included in the 21m 52s OpenEMR 8.3.0 deployment baseline"
     log_info "========================================="
     
     local swarm_max_wait=900  # 15 minutes (ceiling)
@@ -1651,7 +1654,7 @@ deploy_test_data() {
     
     # Additional wait for OpenEMR application to be responsive
     log_info "Waiting for OpenEMR application to be responsive..."
-    log_info "Waiting for OpenEMR responsiveness within the measured 8.2.0 deployment flow..."
+    log_info "Waiting for OpenEMR responsiveness within the measured 8.3.0 deployment flow..."
     local max_attempts=72  # 72 × 10s = 12 minutes (ceiling)
     local attempt=1
 
@@ -2187,7 +2190,7 @@ test_monitoring_stack() {
 
     # Test monitoring stack installation
     log_info "Installing monitoring stack..."
-    log_info "The 8.2.0 install/verify/uninstall test cycle measured 18m 15s..."
+    log_info "The 8.3.0 install/verify/uninstall test cycle measured 27m 33s..."
     
     # Run monitoring installation
     if ! "$monitoring_script" install; then
@@ -2480,7 +2483,7 @@ restore_from_backup() {
 
     # Run restore script with force flag for automated testing
     log_info "Running restore script with force flag..."
-    log_info "The 8.2.0 full restore phase measured 33m 33s, including post-restore observation..."
+    log_info "The 8.3.0 full restore phase measured 36m 6s, including post-restore observation..."
     log_info "Using backup bucket: $BACKUP_BUCKET"
     log_info "Using snapshot ID: $SNAPSHOT_ID"
     log_info "Using AWS region: $AWS_REGION"
@@ -2534,7 +2537,7 @@ verify_restoration() {
 
     # Wait for OpenEMR to be ready - extended timeout for startup
     log_info "Waiting for OpenEMR to be ready after restoration..."
-    log_info "The 8.2.0 verification phase measured 51s; extended timeouts cover slower recovery..."
+    log_info "The 8.3.0 verification phase measured 49s; extended timeouts cover slower recovery..."
 
     # Check current deployment status first
     log_info "Checking current OpenEMR deployment status..."
@@ -2747,7 +2750,7 @@ verify_restoration() {
 
     # Additional wait for OpenEMR application to be responsive
     log_info "Waiting for OpenEMR application to be responsive after restoration..."
-    log_info "The 8.2.0 verification phase measured 51s; allowing extra time for initialization..."
+    log_info "The 8.3.0 verification phase measured 49s; allowing extra time for initialization..."
     local max_attempts=60  # Increased to 60 attempts (10 minutes) for better reliability
     local attempt=1
 

@@ -38,7 +38,7 @@ async def test_in_memory_server_lists_and_reads_interface(
         }
 
         templates = await client.list_resource_templates()
-        assert {str(template.uriTemplate) for template in templates} == {"knowledge://topics/{topic}"}
+        assert {str(template.uri_template) for template in templates} == {"knowledge://topics/{topic}"}
 
         overview_content = await client.read_resource("knowledge://project/overview")
         overview = json.loads(overview_content[0].text)

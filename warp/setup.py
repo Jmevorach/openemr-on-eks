@@ -29,7 +29,7 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "pymysql==1.2.0",  # Pinned to match versions.yaml
-        "boto3==1.43.62",  # Pinned to match versions.yaml
+        "boto3==1.43.86",  # Pinned to match versions.yaml
     ],
     entry_points={
         "console_scripts": [

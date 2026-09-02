@@ -217,7 +217,7 @@ EOF
     update_deployment_timing_report
   "
   assert_success
-  grep -Fq '**OpenEMR:** 8.2.0' "$report_file"
+  grep -Fq "**OpenEMR:** $(yq eval '.applications.openemr.current' "${PROJECT_ROOT}/versions.yaml")" "$report_file"
   grep -Fq '**Total elapsed:** 185s (3m 5s)' "$report_file"
   grep -Fq '| Infrastructure Deployment | SUCCESS | 61 | 1m 01s |' "$report_file"
   grep -Fq '| OpenEMR Deployment | SUCCESS | 125 | 2m 05s |' "$report_file"

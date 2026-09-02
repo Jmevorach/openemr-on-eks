@@ -43,7 +43,7 @@ repos:
   # Python Code Quality
   # ===========================================================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.12
+    rev: v0.16.5
     hooks:
       - id: ruff-check
         name: ruff (openemr_dr)
@@ -66,7 +66,7 @@ repos:
         stages: [manual]
 
   - repo: https://github.com/pycqa/isort
-    rev: 8.0.1
+    rev: 9.0.1
     hooks:
       - id: isort
         args: ["--profile", "black", "--line-length", "127"]
@@ -102,7 +102,7 @@ repos:
 
   # Checkov - IaC Security Scanner (ZERO-TOLERANCE)
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.3.8
+    rev: 3.3.16
     hooks:
       - id: checkov
         args: [
@@ -124,7 +124,7 @@ repos:
   # Terraform Hooks
   # ===========================================================================
   - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.108.1
+    rev: v1.109.0
     hooks:
       - id: terraform_fmt
       - id: terraform_validate
@@ -174,7 +174,7 @@ repos:
   # Commit Message Validation
   # ===========================================================================
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.17.0
+    rev: v4.18.0
     hooks:
       - id: commitizen
         stages: [commit-msg]
