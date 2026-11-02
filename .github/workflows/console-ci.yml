@@ -39,7 +39,7 @@ permissions:
 # Environment variables
 env:
   GO_VERSION: '1.27.3'    # Go version required by console and gosec
-  TRIVY_VERSION: '0.76.1'  # Trivy engine version (synced with versions.yaml)
+  TRIVY_VERSION: '0.76.1' # Trivy engine version (synced with versions.yaml)
   BINARY_NAME: 'openemr-eks-console'
   MODULE_PATH: 'console'
 

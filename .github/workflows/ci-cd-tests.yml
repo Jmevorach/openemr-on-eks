@@ -68,7 +68,7 @@ env:
   PYTHON_VERSION: '3.15.2'    # Python version for YAML validation and dependencies
   TERRAFORM_VERSION: '1.17.1' # Terraform version for infrastructure validation
   KUBECTL_VERSION: 'v1.37.2'  # kubectl version for Kubernetes manifest validation
-  UV_VERSION: '0.13.6'       # uv version for the knowledge MCP package
+  UV_VERSION: '0.13.6'        # uv version for the knowledge MCP package
   TRIVY_VERSION: '0.76.1'     # Trivy engine version (synced with versions.yaml)
 
 # Checkout/setup v7 actions require Node 24; the GitHub-hosted runners below provide it.
