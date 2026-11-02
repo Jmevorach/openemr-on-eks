@@ -72,7 +72,7 @@ Warp provides horizontally scalable accelerated imports to OpenEMR by:
 
 ### Prerequisites
 
-- Python 3.10 or higher (3.15 recommended)
+- Python 3.11 or higher (3.15 recommended)
 - Access to OpenEMR database (required for direct database import)
 - AWS credentials (for S3 data sources)
 

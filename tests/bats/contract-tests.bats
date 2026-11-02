@@ -295,8 +295,8 @@ _all_tf_output_names() {
 }
 
 @test "CONTRACT: Warp minimum Python matches boto3 compatibility" {
-  grep -Fq 'python_requires=">=3.10"' "$WARP_SETUP"
-  grep -Fq "python-version: ['3.10', '3.15.2']" "$CI_WORKFLOW"
+  grep -Fq 'python_requires=">=3.11"' "$WARP_SETUP"
+  grep -Fq "python-version: ['3.11', '3.15.2']" "$CI_WORKFLOW"
 }
 
 @test "CONTRACT: Warp runtime PyMySQL pins match versions.yaml" {
