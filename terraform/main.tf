@@ -6,22 +6,22 @@
 # provisioning across different environments and team members.
 terraform {
   # Minimum Terraform version required for this configuration
-  required_version = ">= 1.16.4"
+  required_version = ">= 1.17.1"
 
   # Provider version constraints to ensure consistent behavior
   # Pinning to specific versions prevents unexpected breaking changes
   required_providers {
     # AWS Provider - Core infrastructure provider for AWS services
-    # Version 6.67.0 satisfies EKS module 21.26.0 constraint (>= 6.59)
+    # Version 6.71.0 satisfies EKS module 21.29.0 constraint (>= 6.59)
     aws = {
       source  = "hashicorp/aws"
-      version = "6.67.0"
+      version = "6.71.0"
     }
     # Kubernetes Provider - For managing Kubernetes resources
-    # Version 3.2.1 supports current Kubernetes API versions and features
+    # Version 3.4.0 supports current Kubernetes API versions and features
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "3.2.1"
+      version = "3.4.0"
     }
     random = {
       source  = "hashicorp/random"
@@ -33,7 +33,7 @@ terraform {
     }
     http = {
       source  = "hashicorp/http"
-      version = "3.6.2"
+      version = "3.6.3"
     }
   }
 }

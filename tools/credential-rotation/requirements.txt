@@ -1,5 +1,5 @@
-boto3==1.43.106
+boto3==1.43.123
 pymysql==1.2.3
 requests==2.34.2
-kubernetes==36.0.3
+kubernetes==37.0.1
 urllib3>=2.6.3

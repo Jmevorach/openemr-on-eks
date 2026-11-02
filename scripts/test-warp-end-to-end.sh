@@ -27,7 +27,7 @@
 # Prerequisites:
 #   - AWS CLI configured with appropriate permissions
 #   - Terraform >= 1.14.6
-#   - kubectl >= 1.36.0
+#   - kubectl >= 1.37.0
 #   - jq, tar, gzip
 #
 # =============================================================================
@@ -276,7 +276,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: warp
-        image: python:3.14-slim
+        image: python:3.15-slim
         workingDir: /app
         env:
         - name: DB_HOST
@@ -324,7 +324,7 @@ spec:
           apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
           
           echo "Installing Python dependencies..."
-          pip install --no-cache-dir pymysql==1.2.3 boto3==1.43.106
+          pip install --no-cache-dir pymysql==1.2.3 boto3==1.43.123
           
           echo "Extracting warp code from ConfigMap..."
           cd /app

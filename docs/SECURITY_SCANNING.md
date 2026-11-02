@@ -285,12 +285,12 @@ and scanner engine are separate pins for Trivy.
 
 | Tool | Current pin | Source |
 |------|-------------|--------|
-| Trivy engine | 0.74.0 | `security_tools.trivy` and `TRIVY_VERSION` in every workflow using `trivy-action` |
+| Trivy engine | 0.76.1 | `security_tools.trivy` and `TRIVY_VERSION` in every workflow using `trivy-action` |
 | Trivy action | v0.36.0, SHA-pinned | `github_workflows.trivy_action` |
-| Checkov | 3.3.22 | `security_tools.checkov`, pre-commit, and the security workflow |
+| Checkov | 3.4.0 | `security_tools.checkov`, pre-commit, and the security workflow |
 | KICS action | v2.1.20, SHA-pinned | `security_tools.kics` and `github_workflows.kics_action` |
 | Bandit | 1.9.4 | `pre_commit_hooks.bandit` and Python project CI |
-| gosec | v2.29.0 | `security_tools.gosec` |
+| gosec | v2.30.0 | `security_tools.gosec` |
 | ShellCheck pre-commit hook | v0.11.0 | `pre_commit_hooks.shellcheck` |
 | Gitleaks | v8.30.0 | `.pre-commit-config.yaml` |
 

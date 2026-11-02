@@ -287,7 +287,7 @@ Compute config is not supported for Kubernetes version 1.28
 
 ```hcl
 # In terraform.tfvars, ensure:
-kubernetes_version = "1.36"  # Must be 1.29 or higher
+kubernetes_version = "1.37"  # Must be 1.29 or higher
 ```
 
 #### Issue: Insufficient IAM Permissions
@@ -1363,7 +1363,7 @@ kubectl logs -n openemr -l app=openemr --since=1h | grep ERROR | tail -5
 # 2. Review and optimize HPA settings
 
 # 3. Check for security updates
-aws eks describe-addon-versions --kubernetes-version 1.36 \
+aws eks describe-addon-versions --kubernetes-version 1.37 \
   --query 'addons[].{AddonName:addonName,LatestVersion:addonVersions[0].addonVersion}'
 ```
 

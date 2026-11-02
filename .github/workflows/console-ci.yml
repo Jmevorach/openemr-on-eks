@@ -38,8 +38,8 @@ permissions:
 
 # Environment variables
 env:
-  GO_VERSION: '1.27.1'    # Go version required by console and gosec
-  TRIVY_VERSION: '0.74.0'  # Trivy engine version (synced with versions.yaml)
+  GO_VERSION: '1.27.3'    # Go version required by console and gosec
+  TRIVY_VERSION: '0.76.1'  # Trivy engine version (synced with versions.yaml)
   BINARY_NAME: 'openemr-eks-console'
   MODULE_PATH: 'console'
 
@@ -110,7 +110,7 @@ jobs:
           go tool cover -func=coverage.out | tail -1
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: console-coverage
@@ -190,7 +190,7 @@ jobs:
           fi
 
       - name: Upload build artifact (for debugging)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.artifact_name }}-debug
@@ -258,7 +258,7 @@ jobs:
           echo "============================================================="
 
       - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always()
         continue-on-error: true  # Don't fail if GitHub Advanced Security is not enabled
         with:

@@ -25,11 +25,12 @@ setup(
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
         "Programming Language :: Python :: 3.14",
+        "Programming Language :: Python :: 3.15",
     ],
     python_requires=">=3.10",
     install_requires=[
         "pymysql==1.2.3",  # Pinned to match versions.yaml
-        "boto3==1.43.106",  # Pinned to match versions.yaml
+        "boto3==1.43.123",  # Pinned to match versions.yaml
     ],
     entry_points={
         "console_scripts": [

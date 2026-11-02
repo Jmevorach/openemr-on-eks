@@ -105,8 +105,8 @@ SCRIPT="${SCRIPTS_DIR}/get-python-image-version.sh"
 
 # ── DEFAULT_VERSION fallback ────────────────────────────────────────────────
 
-@test "DEFAULT_VERSION in script is 3.14" {
-  run grep 'DEFAULT_VERSION="3.14"' "$SCRIPT"
+@test "DEFAULT_VERSION in script is 3.15" {
+  run grep 'DEFAULT_VERSION="3.15"' "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
@@ -117,7 +117,7 @@ SCRIPT="${SCRIPTS_DIR}/get-python-image-version.sh"
   # Use grep-based check instead
   local default
   default=$(grep 'DEFAULT_VERSION=' "$SCRIPT" | head -1 | sed 's/.*DEFAULT_VERSION="\([^"]*\)".*/\1/')
-  [ "$default" = "3.14" ]
+  [ "$default" = "3.15" ]
 }
 
 # ── SCRIPT_DIR / PROJECT_ROOT resolution ────────────────────────────────────

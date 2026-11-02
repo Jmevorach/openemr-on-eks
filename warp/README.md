@@ -72,7 +72,7 @@ Warp provides horizontally scalable accelerated imports to OpenEMR by:
 
 ### Prerequisites
 
-- Python 3.10 or higher (3.14 recommended)
+- Python 3.10 or higher (3.15 recommended)
 - Access to OpenEMR database (required for direct database import)
 - AWS credentials (for S3 data sources)
 
@@ -346,7 +346,7 @@ terraform apply
 
 ### Architecture Choice: Build Inside Pod (Recommended)
 
-**Why**: This approach uses an off-the-shelf Python 3.14 image and builds warp inside the pod from a ConfigMap. This eliminates the need to:
+**Why**: This approach uses an off-the-shelf Python 3.15 image and builds warp inside the pod from a ConfigMap. This eliminates the need to:
 - Build and maintain custom Docker images
 - Push images to container registries
 - Deal with image versioning and updates
@@ -354,7 +354,7 @@ terraform apply
 
 **How it works**:
 1. Warp code is packaged as a tarball and stored in a Kubernetes ConfigMap
-2. Pod uses `python:3.14-slim` base image
+2. Pod uses `python:3.15-slim` base image
 3. On startup, the pod extracts the code from ConfigMap and installs warp
 4. Warp runs with direct database access from within the cluster
 
@@ -389,8 +389,8 @@ spec:
       - name: warp
         # Python image version is managed in versions.yaml under applications.python
         # The version automatically tracks the latest Python 3.xx release
-        # To use a specific version, replace with: python:3.14-slim
-        image: python:3.14-slim
+        # To use a specific version, replace with: python:3.15-slim
+        image: python:3.15-slim
         command: ["/bin/bash"]
         args:
         - -c
@@ -413,7 +413,7 @@ spec:
 **Python Version Management**:
 
 The Python Docker image version is centrally managed in `versions.yaml`:
-- **Location**: `applications.python.current` (defaults to `3.14`)
+- **Location**: `applications.python.current` (defaults to `3.15`)
 - **Auto-detection**: When `auto_detect_latest: true`, the version manager automatically checks Docker Hub for the latest Python 3.xx release
 - **Script**: Use `scripts/get-python-image-version.sh` to get the current version programmatically
 - **Updates**: The monthly version check workflow will notify when newer Python 3.xx versions are available

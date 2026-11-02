@@ -25,7 +25,7 @@
 # Prerequisites:
 #   - AWS CLI configured with appropriate permissions
 #   - Terraform >= 1.14.6
-#   - kubectl >= 1.36.0
+#   - kubectl >= 1.37.0
 #   - helm >= 3.0.0
 #   - jq
 #
@@ -416,7 +416,7 @@ EXAMPLES:
 PREREQUISITES:
     - AWS CLI configured with appropriate permissions
     - Terraform >= 1.14.6
-    - kubectl >= 1.36.0
+    - kubectl >= 1.37.0
     - helm >= 3.0.0
     - jq
 

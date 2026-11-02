@@ -38,8 +38,8 @@ spec:
       - name: warp
         # Python image version: Uses latest 3.xx-slim tag automatically
         # Version is managed in versions.yaml under applications.python
-        # To use a specific version, replace with: python:3.14-slim
-        image: python:3.14-slim
+        # To use a specific version, replace with: python:3.15-slim
+        image: python:3.15-slim
         imagePullPolicy: IfNotPresent
         workingDir: /app
         securityContext:
@@ -103,7 +103,7 @@ spec:
 
           echo "Installing Python dependencies..."
           # Versions pinned to match versions.yaml
-          pip install --no-cache-dir pymysql==1.2.3 boto3==1.43.106
+          pip install --no-cache-dir pymysql==1.2.3 boto3==1.43.123
 
           echo "Extracting warp code from ConfigMap..."
           cd /app

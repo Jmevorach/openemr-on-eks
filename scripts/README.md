@@ -619,7 +619,7 @@ and run the Bash implementation directly.
 #### `test-warp-pinned-versions.sh`
 
 - **Purpose**: Tests that Warp Python package dependencies match versions.yaml
-- **Dependencies**: yq, Python 3.8+ (Python 3.14 recommended)
+- **Dependencies**: yq, Python 3.8+ (Python 3.15 recommended)
 - **Key Features**:
   - Automatically reads version numbers from versions.yaml
   - Verifies pinned versions are installed correctly
@@ -634,7 +634,7 @@ and run the Bash implementation directly.
 - **Maintenance Notes**:
   - Versions are automatically read from versions.yaml (no manual updates needed)
   - Script validates that versions.yaml and actual installed packages match
-  - If Python 3.14 is not available locally, script will use available Python version with warning
+  - If Python 3.15 is not available locally, script will use available Python version with warning
 
 #### `test-warp-end-to-end.sh`
 

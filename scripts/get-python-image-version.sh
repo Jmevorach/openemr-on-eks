@@ -35,17 +35,17 @@
 #
 # Configuration:
 #   Version is managed in versions.yaml under applications.python:
-#     - current: Version number (e.g., "3.14")
+#     - current: Version number (e.g., "3.15")
 #     - auto_detect_latest: Enable automatic latest version detection (true/false)
 #     - registry: Docker registry (default: "library/python")
 #
 # Examples:
-#   ./get-python-image-version.sh             # Returns: python:3.14-slim
-#   ./get-python-image-version.sh slim        # Returns: python:3.14-slim
-#   ./get-python-image-version.sh alpine      # Returns: python:3.14-alpine
+#   ./get-python-image-version.sh             # Returns: python:3.15-slim
+#   ./get-python-image-version.sh slim        # Returns: python:3.15-slim
+#   ./get-python-image-version.sh alpine      # Returns: python:3.15-alpine
 #
 # Output:
-#   Prints Docker image tag to stdout (e.g., "python:3.14-slim")
+#   Prints Docker image tag to stdout (e.g., "python:3.15-slim")
 #   Status messages printed to stderr for logging/debugging
 #
 # =============================================================================
@@ -53,7 +53,7 @@
 set -e
 
 # Configuration variables - default values used when versions.yaml unavailable
-DEFAULT_VERSION="3.14" # Default Python version fallback
+DEFAULT_VERSION="3.15" # Default Python version fallback
 SUFFIX="${1:-slim}"    # Image variant suffix (default: slim)
 
 # Script directory detection - allows script to be run from any location

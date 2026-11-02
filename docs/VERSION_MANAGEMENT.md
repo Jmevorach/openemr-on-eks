@@ -97,12 +97,12 @@ The `versions.yaml` file serves as the single source of truth for all version in
 # Core Application Versions
 applications:
   openemr:
-    current: "8.4.1"
+    current: "8.5.0"
     registry: "openemr/openemr"
 ```
 
-Selected current project pins include OpenEMR 8.4.1, EKS 1.36, Terraform
-1.16.4, CI Python 3.14.8, kubectl v1.37.1, Floci 2.1.0 (`applications.floci`),
+Selected current project pins include OpenEMR 8.5.0, EKS 1.37, Terraform
+1.17.1, CI Python 3.15.2, kubectl v1.37.2, Floci 2.4.0 (`applications.floci`),
 and the `ubuntu-26.04` GitHub runner.
 Always read `versions.yaml` rather than copying this summary into automation.
 
@@ -233,7 +233,7 @@ When bumping the pin, update `applications.floci.current` and confirm
 ### Kubernetes Version
 
 **Version Source:** AWS EKS supported versions
-**Current Project Version:** 1.36
+**Current Project Version:** 1.37
 **Supported Inventory:** See `infrastructure.eks.aws_supported_versions` in
 `versions.yaml` and confirm regional EKS support before an upgrade.
 
