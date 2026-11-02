@@ -41,7 +41,7 @@ warp/
 Warp uses a **build-inside-pod** architecture for Kubernetes deployments:
 
 **Design Decision**: Instead of building and maintaining custom Docker images, warp uses:
-- **Base Image**: `python:3.14-slim` (off-the-shelf, maintained by Python team)
+- **Base Image**: `python:3.15-slim` (off-the-shelf, maintained by Python team)
 - **Code Distribution**: Kubernetes ConfigMap containing a tarball of warp code
 - **Build Process**: Code is extracted and installed inside the pod at runtime
 
@@ -50,12 +50,12 @@ Warp uses a **build-inside-pod** architecture for Kubernetes deployments:
 - No container registry dependencies
 - Easy code updates (just update ConfigMap)
 - Works with private repositories (no git clone needed)
-- Uses latest Python 3.14 features
+- Uses latest Python 3.15 features
 
 **Process Flow**:
 1. Warp code is packaged: `tar czf warp-code.tar.gz warp/ setup.py requirements.txt README.md`
 2. ConfigMap created: `kubectl create configmap warp-code --from-file=warp-code.tar.gz=...`
-3. Job pod starts with `python:3.14-slim` image
+3. Job pod starts with `python:3.15-slim` image
 4. Pod extracts code from ConfigMap volume
 5. Pod installs dependencies and warp package
 6. Warp executes with direct database access

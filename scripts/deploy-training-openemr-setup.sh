@@ -29,7 +29,7 @@
 # Prerequisites:
 #   - AWS CLI configured with appropriate permissions
 #   - Terraform >= 1.14.6
-#   - kubectl >= 1.36.0
+#   - kubectl >= 1.37.0
 #   - jq, tar, gzip
 #
 # =============================================================================
@@ -336,7 +336,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: warp
-        image: python:3.14-slim
+        image: python:3.15-slim
         workingDir: /app
         env:
         - name: DB_HOST
@@ -578,7 +578,7 @@ EXAMPLES:
 PREREQUISITES:
     - AWS CLI configured with appropriate permissions
     - Terraform >= 1.14.6
-    - kubectl >= 1.36.0
+    - kubectl >= 1.37.0
     - jq >= 1.6
     - tar, gzip
 

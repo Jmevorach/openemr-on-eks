@@ -113,13 +113,13 @@ def _wait_for_rollout(
         status = dep.status
         spec_replicas = dep.spec.replicas or 1
 
-        updated = status.updated_replicas or 0
-        ready = status.ready_replicas or 0
-        available = status.available_replicas or 0
+        updated = getattr(status, "updated_replicas", None) or 0
+        ready = getattr(status, "ready_replicas", None) or 0
+        available = getattr(status, "available_replicas", None) or 0
 
         if updated >= spec_replicas and ready >= spec_replicas and available >= spec_replicas:
             # Verify no old ReplicaSets still have pods
-            if (status.unavailable_replicas or 0) == 0:
+            if (getattr(status, "unavailable_replicas", None) or 0) == 0:
                 print(f"Rollout complete: {ready}/{spec_replicas} pods ready")
                 return
 
